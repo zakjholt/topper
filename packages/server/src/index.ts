@@ -7,6 +7,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { api } from "./api.ts";
 import { auth } from "./auth.ts";
+import { migrateScenes } from "./db/migrate-scenes.ts";
 import { registerWebSocket } from "./ws.ts";
 
 const app = new Hono();
@@ -33,6 +34,7 @@ registerWebSocket(app, upgradeWebSocket);
 app.get("/api/health", (c) => c.json({ ok: true }));
 
 const port = Number(process.env.PORT ?? 3000);
+await migrateScenes();
 const server = serve({ fetch: app.fetch, port }, () => {
   console.log(`Topper server listening on http://localhost:${port}`);
 });

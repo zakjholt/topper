@@ -79,6 +79,16 @@ function applyEvent(snapshot: TableSnapshot, event: ServerEvent): TableSnapshot 
         ...snapshot,
         map: { ...snapshot.map, edges: mergeEdges(snapshot.map.edges ?? {}, event.edges) },
       };
+    case "scenes_updated":
+      return { ...snapshot, scenes: event.scenes };
+    case "scene_switched":
+      return {
+        ...snapshot,
+        activeSceneId: event.sceneId,
+        map: event.map,
+        tokens: event.tokens,
+        scenes: event.scenes ?? snapshot.scenes,
+      };
     case "presence":
       return { ...snapshot, members: event.members };
     case "error":
@@ -120,6 +130,10 @@ export function TableProvider({
         if (!current) return current;
         return applyEvent(current, event);
       });
+      if (event.type === "scene_switched" || event.type === "table_snapshot") {
+        const tokens = event.type === "scene_switched" ? event.tokens : event.snapshot.tokens;
+        setSelectedTokenId((id) => (id && tokens.some((token) => token.id === id) ? id : null));
+      }
     };
     return () => {
       ws.close();

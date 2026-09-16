@@ -10,8 +10,15 @@ export type PresenceMember = {
   role: MemberRole;
 };
 
+export type SceneInfo = {
+  id: string;
+  name: string;
+  sortOrder: number;
+};
+
 export type MapState = {
   tableId: string;
+  sceneId: string;
   imageUrl: string | null;
   width: number;
   height: number;
@@ -35,6 +42,7 @@ export type CharacterState = {
 export type TokenState = {
   id: string;
   tableId: string;
+  sceneId: string;
   ownerId: string;
   characterId: string | null;
   x: number;
@@ -65,6 +73,8 @@ export type TableInfo = {
 export type TableSnapshot = {
   table: TableInfo;
   map: MapState;
+  scenes: SceneInfo[];
+  activeSceneId: string;
   characters: CharacterState[];
   tokens: TokenState[];
   diceLog: DiceLogEntry[];
@@ -146,6 +156,18 @@ export const clientActionSchema = z.discriminatedUnion("type", [
   }),
   z.object({ type: z.literal("roll_dice"), expression: z.string().min(1) }),
   z.object({
+    type: z.literal("create_scene"),
+    name: z.string().trim().min(1).max(48).optional(),
+    duplicate: z.boolean().optional(),
+  }),
+  z.object({ type: z.literal("switch_scene"), sceneId: z.string().min(1) }),
+  z.object({
+    type: z.literal("rename_scene"),
+    sceneId: z.string().min(1),
+    name: z.string().trim().min(1).max(48),
+  }),
+  z.object({ type: z.literal("delete_scene"), sceneId: z.string().min(1) }),
+  z.object({
     type: z.literal("upsert_character"),
     id: z.string().optional(),
     schemaId: z.string().min(1),
@@ -167,5 +189,7 @@ export type ServerEvent =
   | { type: "map_updated"; map: MapState }
   | { type: "cells_painted"; cells: CellPatch[] }
   | { type: "edges_painted"; edges: EdgePatch[] }
+  | { type: "scenes_updated"; scenes: SceneInfo[] }
+  | { type: "scene_switched"; sceneId: string; map: MapState; tokens: TokenState[]; scenes?: SceneInfo[] }
   | { type: "presence"; members: PresenceMember[] }
   | { type: "error"; message: string };

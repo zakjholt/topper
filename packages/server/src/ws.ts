@@ -11,7 +11,10 @@ import {
 } from "@topper/shared";
 import { auth } from "./auth.ts";
 import {
+  createScene,
+  deleteScene,
   deleteToken,
+  getActiveScene,
   getCharacter,
   getMembership,
   getToken,
@@ -23,6 +26,8 @@ import {
   paintMapEdges,
   patchCharacterData,
   placeToken,
+  renameScene,
+  switchScene,
   updateMap,
   updateToken,
   upsertCharacter,
@@ -77,6 +82,21 @@ function canEditToken(role: MemberRole, ownerId: string, userId: string) {
   return role === "gm" || ownerId === userId;
 }
 
+function assertGm(peer: Peer) {
+  if (peer.role !== "gm") throw new Error("Only the GM can do that");
+}
+
+async function requireActiveToken(peer: Peer, tokenId: string) {
+  const token = await getToken(tokenId);
+  if (!token || token.tableId !== peer.tableId) throw new Error("Token not found");
+  if (!canEditToken(peer.role, token.ownerId, peer.userId)) {
+    throw new Error("You cannot edit this token");
+  }
+  const active = await getActiveScene(peer.tableId);
+  if (token.sceneId !== active.id) throw new Error("Token is not on this scene");
+  return token;
+}
+
 async function handleAction(peer: Peer, action: ClientAction) {
   switch (action.type) {
     case "join_table":
@@ -117,11 +137,7 @@ async function handleAction(peer: Peer, action: ClientAction) {
       return;
     }
     case "move_token": {
-      const token = await getToken(action.tokenId);
-      if (!token || token.tableId !== peer.tableId) throw new Error("Token not found");
-      if (!canEditToken(peer.role, token.ownerId, peer.userId)) {
-        throw new Error("You cannot move this token");
-      }
+      const token = await requireActiveToken(peer, action.tokenId);
       if (action.persist !== false) {
         await moveToken(token.id, action.x, action.y);
       }
@@ -148,33 +164,25 @@ async function handleAction(peer: Peer, action: ClientAction) {
       return;
     }
     case "delete_token": {
-      const token = await getToken(action.tokenId);
-      if (!token || token.tableId !== peer.tableId) throw new Error("Token not found");
-      if (!canEditToken(peer.role, token.ownerId, peer.userId)) {
-        throw new Error("You cannot delete this token");
-      }
+      const token = await requireActiveToken(peer, action.tokenId);
       await deleteToken(token.id);
       broadcast(peer.tableId, { type: "token_deleted", tokenId: token.id });
       return;
     }
     case "update_token": {
-      const token = await getToken(action.tokenId);
-      if (!token || token.tableId !== peer.tableId) throw new Error("Token not found");
-      if (!canEditToken(peer.role, token.ownerId, peer.userId)) {
-        throw new Error("You cannot update this token");
-      }
+      const token = await requireActiveToken(peer, action.tokenId);
       const updated = await updateToken(token.id, action.patch);
       broadcast(peer.tableId, { type: "token_updated", token: updated });
       return;
     }
     case "update_map": {
-      if (peer.role !== "gm") throw new Error("Only the GM can update the map");
+      assertGm(peer);
       const map = await updateMap(peer.tableId, action.patch);
       broadcast(peer.tableId, { type: "map_updated", map });
       return;
     }
     case "paint_cells": {
-      if (peer.role !== "gm") throw new Error("Only the GM can paint the map");
+      assertGm(peer);
       if (action.persist !== false) {
         await paintMapCells(peer.tableId, action.cells);
       }
@@ -182,7 +190,7 @@ async function handleAction(peer: Peer, action: ClientAction) {
       return;
     }
     case "paint_edges": {
-      if (peer.role !== "gm") throw new Error("Only the GM can paint the map");
+      assertGm(peer);
       if (action.persist !== false) {
         await paintMapEdges(peer.tableId, action.edges);
       }
@@ -199,6 +207,54 @@ async function handleAction(peer: Peer, action: ClientAction) {
         result,
       });
       broadcast(peer.tableId, { type: "dice_rolled", roll });
+      return;
+    }
+    case "create_scene": {
+      assertGm(peer);
+      const created = await createScene(peer.tableId, {
+        name: action.name,
+        duplicate: action.duplicate,
+      });
+      broadcast(peer.tableId, {
+        type: "scene_switched",
+        sceneId: created.sceneId,
+        map: created.map,
+        tokens: created.tokens,
+        scenes: created.scenes,
+      });
+      return;
+    }
+    case "switch_scene": {
+      assertGm(peer);
+      const next = await switchScene(peer.tableId, action.sceneId);
+      broadcast(peer.tableId, {
+        type: "scene_switched",
+        sceneId: next.sceneId,
+        map: next.map,
+        tokens: next.tokens,
+      });
+      return;
+    }
+    case "rename_scene": {
+      assertGm(peer);
+      const scenes = await renameScene(peer.tableId, action.sceneId, action.name);
+      broadcast(peer.tableId, { type: "scenes_updated", scenes });
+      return;
+    }
+    case "delete_scene": {
+      assertGm(peer);
+      const result = await deleteScene(peer.tableId, action.sceneId);
+      if (result.switched) {
+        broadcast(peer.tableId, {
+          type: "scene_switched",
+          sceneId: result.switched.sceneId,
+          map: result.switched.map,
+          tokens: result.switched.tokens,
+          scenes: result.scenes,
+        });
+      } else {
+        broadcast(peer.tableId, { type: "scenes_updated", scenes: result.scenes });
+      }
       return;
     }
   }

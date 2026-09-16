@@ -188,9 +188,11 @@ gm.ws.close();
 const gmAgain = await connect(gmCookie, table.id);
 const snap = (await gmAgain.waitFor("table_snapshot")).snapshot as {
   characters: { id: string; data: { name?: string; hp?: { current: number } } }[];
-  tokens: { x: number }[];
+  tokens: { id: string; x: number }[];
   diceLog: unknown[];
   map: { fills: Record<string, string>; edges: Record<string, string> };
+  scenes: { id: string; name: string }[];
+  activeSceneId: string;
 };
 
 const branwen = snap.characters.find((ch) => ch.data.name === "Branwen");
@@ -203,7 +205,70 @@ if (snap.diceLog.length < 1) throw new Error("Dice log not persisted");
 if (snap.map.fills["2,3"] !== "#c4b49a") throw new Error("Cell fill not persisted");
 if (snap.map.edges["2,3,h"] !== "#2a2116") throw new Error("Edge paint not persisted");
 if (snap.map.fills["0,0"]) throw new Error("Player was able to paint the map");
+if (!snap.activeSceneId) throw new Error("Active scene missing");
+if (!Array.isArray(snap.scenes) || snap.scenes.length < 1) throw new Error("Scenes missing");
+
+const firstSceneId = snap.activeSceneId;
+const tokenId = snap.tokens.find((t) => t.x === 280)?.id;
+if (!tokenId) throw new Error("Token missing on first scene");
+
+mark = player.events.length;
+gmAgain.ws.send(JSON.stringify({ type: "create_scene", name: "The Crypts" }));
+const switched = (await player.waitFor("scene_switched", mark)) as {
+  sceneId: string;
+  tokens: unknown[];
+  map: { fills: Record<string, string> };
+};
+if (!switched.sceneId || switched.sceneId === firstSceneId) throw new Error("Did not switch to the new scene");
+if (switched.tokens.length !== 0) throw new Error("New scene should start without tokens");
+if (Object.keys(switched.map.fills ?? {}).length !== 0) throw new Error("New scene should start without fills");
+
+mark = player.events.length;
+player.ws.send(JSON.stringify({ type: "create_scene", name: "Nope" }));
+await player.waitFor("error", mark);
+
+mark = player.events.length;
+gmAgain.ws.send(JSON.stringify({ type: "place_token", x: 90, y: 90, label: "Skeleton" }));
+await player.waitFor("token_placed", mark);
+
+mark = player.events.length;
+gmAgain.ws.send(JSON.stringify({ type: "switch_scene", sceneId: firstSceneId }));
+const back = (await player.waitFor("scene_switched", mark)) as {
+  sceneId: string;
+  tokens: { id: string; x: number }[];
+  map: { fills: Record<string, string> };
+};
+if (back.sceneId !== firstSceneId) throw new Error("Did not return to the first scene");
+if (!back.tokens.some((t) => t.id === tokenId && t.x === 280)) {
+  throw new Error("First scene tokens were not preserved");
+}
+if (back.map.fills["2,3"] !== "#c4b49a") throw new Error("First scene fills were not preserved");
+
+mark = player.events.length;
+gmAgain.ws.send(JSON.stringify({ type: "create_scene", duplicate: true, name: "Tavern copy" }));
+const dupe = (await player.waitFor("scene_switched", mark)) as {
+  sceneId: string;
+  tokens: { x: number }[];
+  map: { fills: Record<string, string> };
+};
+if (dupe.sceneId === firstSceneId) throw new Error("Duplicate stayed on the original scene");
+if (!dupe.tokens.some((t) => t.x === 280)) throw new Error("Duplicated scene did not copy tokens");
+if (dupe.map.fills["2,3"] !== "#c4b49a") throw new Error("Duplicated scene did not copy fills");
 
 gmAgain.ws.close();
+const gmThird = await connect(gmCookie, table.id);
+const snap2 = (await gmThird.waitFor("table_snapshot")).snapshot as {
+  scenes: { id: string; name: string }[];
+  activeSceneId: string;
+  tokens: { x: number }[];
+  map: { fills: Record<string, string> };
+};
+if (snap2.scenes.length !== 3) throw new Error(`Expected 3 scenes, got ${snap2.scenes.length}`);
+if (!snap2.scenes.some((scene) => scene.name === "The Crypts")) throw new Error("Crypts scene not persisted");
+if (!snap2.scenes.some((scene) => scene.name === "Tavern copy")) throw new Error("Duplicated scene not persisted");
+if (snap2.activeSceneId !== dupe.sceneId) throw new Error("Active scene not persisted");
+if (!snap2.tokens.some((t) => t.x === 280)) throw new Error("Duplicated tokens not persisted");
+if (snap2.map.fills["2,3"] !== "#c4b49a") throw new Error("Duplicated fills not persisted");
+gmThird.ws.close();
 player.ws.close();
 console.log("e2e ok", table.inviteCode);

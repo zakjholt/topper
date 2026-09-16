@@ -20,6 +20,7 @@ export type {
   MapState,
   MemberRole,
   PresenceMember,
+  SceneInfo,
   ServerEvent,
   TableInfo,
   TableSnapshot,

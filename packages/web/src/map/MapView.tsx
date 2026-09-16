@@ -18,6 +18,7 @@ import { uploadFile } from "../api.ts";
 import { EdgeLayer, FillLayer, GridLayer } from "./DrawingLayer.tsx";
 import { closerEdgeVertex, nearestEdge, nearestVertex, worldToCell } from "./grid.ts";
 import { Toolbar } from "./Toolbar.tsx";
+import { SceneBar } from "./SceneBar.tsx";
 import { defaultPaintColor } from "./palette.ts";
 
 const ZOOM_MIN = 0.25;
@@ -109,6 +110,22 @@ export function MapView() {
   const isGm = snapshot?.table.role === "gm";
   const drawing = Boolean(isGm && (tool === "fill" || tool === "edge"));
   const panOverride = panHeld;
+  const sceneId = snapshot?.activeSceneId;
+  const sceneRef = useRef(sceneId);
+
+  useEffect(() => {
+    if (!sceneId || sceneRef.current === sceneId) {
+      sceneRef.current = sceneId;
+      return;
+    }
+    sceneRef.current = sceneId;
+    const nextPan = { x: 40, y: 40 };
+    const nextZoom = 0.75;
+    panRef.current = nextPan;
+    zoomRef.current = nextZoom;
+    setPan(nextPan);
+    setZoom(nextZoom);
+  }, [sceneId]);
 
   useEffect(() => {
     function syncPanHeld(e: KeyboardEvent) {
@@ -159,7 +176,11 @@ export function MapView() {
   }, [preview]);
 
   if (!snapshot?.map) {
-    return <div className="map-stage" />;
+    return (
+      <div className="map-stage">
+        <div className="map-board" />
+      </div>
+    );
   }
 
   const mapState = snapshot.map;
@@ -476,35 +497,36 @@ export function MapView() {
 
   return (
     <div className="map-stage">
-      <Toolbar
-        paintColor={paintColor}
-        setPaintColor={setPaintColor}
-        mapBusy={mapBusy}
-        onUploadMap={(file) => void onUploadMap(file)}
-      />
-      <div
-        ref={viewportRef}
-        className={viewportClass}
-        onWheel={onWheel}
-        onPointerDown={onViewportPointerDown}
-        onPointerMove={onViewportPointerMove}
-        onPointerUp={endDrag}
-        onPointerCancel={endDrag}
-        onContextMenu={(evt) => {
-          evt.preventDefault();
-          if (evt.ctrlKey || !drawing || drag.current) return;
-          eraseAt(evt.clientX, evt.clientY);
-        }}
-        onAuxClick={(evt) => evt.preventDefault()}
-      >
+      <div className="map-board">
+        <Toolbar
+          paintColor={paintColor}
+          setPaintColor={setPaintColor}
+          mapBusy={mapBusy}
+          onUploadMap={(file) => void onUploadMap(file)}
+        />
         <div
-          className="map-world"
-          style={{
-            width: mapState.width,
-            height: mapState.height,
-            transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+          ref={viewportRef}
+          className={viewportClass}
+          onWheel={onWheel}
+          onPointerDown={onViewportPointerDown}
+          onPointerMove={onViewportPointerMove}
+          onPointerUp={endDrag}
+          onPointerCancel={endDrag}
+          onContextMenu={(evt) => {
+            evt.preventDefault();
+            if (evt.ctrlKey || !drawing || drag.current) return;
+            eraseAt(evt.clientX, evt.clientY);
           }}
+          onAuxClick={(evt) => evt.preventDefault()}
         >
+          <div
+            className="map-world"
+            style={{
+              width: mapState.width,
+              height: mapState.height,
+              transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+            }}
+          >
           {mapState.imageUrl ? (
             <img className="map-image" src={mapState.imageUrl} alt="" draggable={false} />
           ) : (
@@ -564,7 +586,9 @@ export function MapView() {
             );
           })}
         </div>
+        </div>
       </div>
+      <SceneBar />
     </div>
   );
 }

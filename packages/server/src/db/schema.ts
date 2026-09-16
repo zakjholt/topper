@@ -1,6 +1,7 @@
 import {
   boolean,
   doublePrecision,
+  index,
   integer,
   jsonb,
   pgTable,
@@ -66,6 +67,7 @@ export const tables = pgTable("tables", {
     .notNull()
     .references(() => user.id, { onDelete: "cascade" }),
   inviteCode: text("invite_code").notNull().unique(),
+  activeSceneId: text("active_scene_id"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -83,20 +85,28 @@ export const tableMembers = pgTable(
   (t) => [primaryKey({ columns: [t.tableId, t.userId] })],
 );
 
-export const maps = pgTable("maps", {
-  tableId: text("table_id")
-    .primaryKey()
-    .references(() => tables.id, { onDelete: "cascade" }),
-  imageUrl: text("image_url"),
-  width: integer("width").notNull().default(2000),
-  height: integer("height").notNull().default(1400),
-  gridSize: integer("grid_size").notNull().default(70),
-  snap: boolean("snap").notNull().default(true),
-  offsetX: integer("offset_x").notNull().default(0),
-  offsetY: integer("offset_y").notNull().default(0),
-  fills: jsonb("fills").$type<Record<string, string>>().notNull().default({}),
-  edges: jsonb("edges").$type<Record<string, string>>().notNull().default({}),
-});
+export const scenes = pgTable(
+  "scenes",
+  {
+    id: text("id").primaryKey(),
+    tableId: text("table_id")
+      .notNull()
+      .references(() => tables.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    sortOrder: integer("sort_order").notNull().default(0),
+    imageUrl: text("image_url"),
+    width: integer("width").notNull().default(2000),
+    height: integer("height").notNull().default(1400),
+    gridSize: integer("grid_size").notNull().default(70),
+    snap: boolean("snap").notNull().default(true),
+    offsetX: integer("offset_x").notNull().default(0),
+    offsetY: integer("offset_y").notNull().default(0),
+    fills: jsonb("fills").$type<Record<string, string>>().notNull().default({}),
+    edges: jsonb("edges").$type<Record<string, string>>().notNull().default({}),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [index("scenes_table_id_idx").on(t.tableId)],
+);
 
 export const characters = pgTable("characters", {
   id: text("id").primaryKey(),
@@ -112,21 +122,28 @@ export const characters = pgTable("characters", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
-export const tokens = pgTable("tokens", {
-  id: text("id").primaryKey(),
-  tableId: text("table_id")
-    .notNull()
-    .references(() => tables.id, { onDelete: "cascade" }),
-  ownerId: text("owner_id")
-    .notNull()
-    .references(() => user.id, { onDelete: "cascade" }),
-  characterId: text("character_id").references(() => characters.id, { onDelete: "set null" }),
-  x: doublePrecision("x").notNull(),
-  y: doublePrecision("y").notNull(),
-  size: integer("size").notNull().default(70),
-  label: text("label").notNull().default(""),
-  imageUrl: text("image_url"),
-});
+export const tokens = pgTable(
+  "tokens",
+  {
+    id: text("id").primaryKey(),
+    tableId: text("table_id")
+      .notNull()
+      .references(() => tables.id, { onDelete: "cascade" }),
+    sceneId: text("scene_id")
+      .notNull()
+      .references(() => scenes.id, { onDelete: "cascade" }),
+    ownerId: text("owner_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    characterId: text("character_id").references(() => characters.id, { onDelete: "set null" }),
+    x: doublePrecision("x").notNull(),
+    y: doublePrecision("y").notNull(),
+    size: integer("size").notNull().default(70),
+    label: text("label").notNull().default(""),
+    imageUrl: text("image_url"),
+  },
+  (t) => [index("tokens_scene_id_idx").on(t.sceneId)],
+);
 
 export const diceLog = pgTable("dice_log", {
   id: text("id").primaryKey(),

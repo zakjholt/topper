@@ -411,7 +411,7 @@ export function Toolbar({
 
   useEffect(() => {
     function onMove(e: PointerEvent) {
-      const stage = dockRef.current?.closest(".map-stage");
+      const stage = dockRef.current?.closest(".map-board");
       if (!stage) return;
       const rect = stage.getBoundingClientRect();
       const x = e.clientX - rect.left;
@@ -587,7 +587,7 @@ export function Toolbar({
   }
 
   function updateDragFromPointer(clientX: number, clientY: number) {
-    const stage = dockRef.current?.closest(".map-stage");
+    const stage = dockRef.current?.closest(".map-board");
     if (!stage) return;
     const rect = stage.getBoundingClientRect();
     const x = clientX - rect.left;
@@ -940,6 +940,18 @@ export function Toolbar({
               <li>
                 <span>Previous color</span>
                 <kbd>⇧Tab</kbd>
+              </li>
+            ) : null}
+            {isGm ? (
+              <li>
+                <span>Previous scene</span>
+                <kbd>[</kbd>
+              </li>
+            ) : null}
+            {isGm ? (
+              <li>
+                <span>Next scene</span>
+                <kbd>]</kbd>
               </li>
             ) : null}
             <li>
