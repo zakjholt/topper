@@ -319,9 +319,20 @@ textarea {
 
 .map-drawing {
   position: absolute;
-  left: 0;
-  top: 0;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
   overflow: visible;
+  pointer-events: none;
+}
+
+.map-grid-line {
+  stroke: rgba(210, 177, 122, 0.28);
+  stroke-width: 1;
+}
+
+.map-fill-preview {
   pointer-events: none;
 }
 
@@ -334,6 +345,14 @@ textarea {
 
 .map-viewport.placing {
   cursor: crosshair;
+}
+
+.map-viewport.panning {
+  cursor: grab;
+}
+
+.map-viewport.panning:active {
+  cursor: grabbing;
 }
 
 .map-world {
@@ -355,12 +374,6 @@ textarea {
   width: 100%;
   height: 100%;
   background: #1c2a22;
-}
-
-.map-grid {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
 }
 
 .token {

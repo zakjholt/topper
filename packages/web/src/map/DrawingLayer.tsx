@@ -1,5 +1,14 @@
-import { parseCellKey, parseEdgeKey, type CellPatch, type EdgePatch } from "@topper/shared";
-import { cellOrigin } from "./grid.ts";
+import { parseCellKey, parseEdgeKey, type EdgePatch } from "@topper/shared";
+import { cellOrigin, cellsToWorldRect, gridLinePositions } from "./grid.ts";
+
+function drawingSvgProps(width: number, height: number) {
+  return {
+    width,
+    height,
+    viewBox: `0 0 ${width} ${height}`,
+    preserveAspectRatio: "none" as const,
+  };
+}
 
 const ERASE_PREVIEW = "#f0e4c8";
 
@@ -8,38 +17,26 @@ function FillRects({
   gridSize,
   offsetX,
   offsetY,
-  opacity = 1,
-  preview = false,
 }: {
-  fills: Record<string, string> | CellPatch[];
+  fills: Record<string, string>;
   gridSize: number;
   offsetX: number;
   offsetY: number;
-  opacity?: number;
-  preview?: boolean;
 }) {
-  const entries = Array.isArray(fills)
-    ? fills
-    : Object.entries(fills).flatMap(([key, color]) => {
-        const cell = parseCellKey(key);
-        return cell ? [{ ...cell, color }] : [];
-      });
-
   return (
     <>
-      {entries.map((cell) => {
-        const color = cell.color ?? (preview ? ERASE_PREVIEW : null);
-        if (!color) return null;
+      {Object.entries(fills).map(([key, color]) => {
+        const cell = parseCellKey(key);
+        if (!cell) return null;
         const origin = cellOrigin(cell.x, cell.y, gridSize, offsetX, offsetY);
         return (
           <rect
-            key={`${cell.x},${cell.y}`}
+            key={key}
             x={origin.x}
             y={origin.y}
             width={gridSize}
             height={gridSize}
             fill={color}
-            opacity={opacity}
           />
         );
       })}
@@ -96,6 +93,12 @@ function EdgeLines({
   );
 }
 
+export type FillPreview = {
+  start: { x: number; y: number };
+  end: { x: number; y: number };
+  color: string | null;
+};
+
 export function FillLayer({
   fills,
   preview,
@@ -106,24 +109,33 @@ export function FillLayer({
   offsetY,
 }: {
   fills: Record<string, string>;
-  preview?: CellPatch[] | null;
+  preview?: FillPreview | null;
   width: number;
   height: number;
   gridSize: number;
   offsetX: number;
   offsetY: number;
 }) {
+  const box = preview
+    ? cellsToWorldRect(preview.start, preview.end, gridSize, offsetX, offsetY)
+    : null;
+  const stroke = Math.max(3, gridSize * 0.06);
+
   return (
-    <svg className="map-drawing fills" width={width} height={height}>
+    <svg className="map-drawing fills" {...drawingSvgProps(width, height)}>
       <FillRects fills={fills} gridSize={gridSize} offsetX={offsetX} offsetY={offsetY} />
-      {preview && preview.length > 0 ? (
-        <FillRects
-          fills={preview}
-          gridSize={gridSize}
-          offsetX={offsetX}
-          offsetY={offsetY}
-          opacity={0.55}
-          preview
+      {box && preview ? (
+        <rect
+          className="map-fill-preview"
+          x={box.x}
+          y={box.y}
+          width={box.width}
+          height={box.height}
+          fill={preview.color ?? ERASE_PREVIEW}
+          fillOpacity={preview.color ? 0.5 : 0.28}
+          stroke={preview.color ?? "#e07a6c"}
+          strokeWidth={stroke}
+          strokeDasharray={`${gridSize * 0.2} ${gridSize * 0.12}`}
         />
       ) : null}
     </svg>
@@ -133,6 +145,7 @@ export function FillLayer({
 export function EdgeLayer({
   edges,
   preview,
+  linePreview,
   width,
   height,
   gridSize,
@@ -141,14 +154,25 @@ export function EdgeLayer({
 }: {
   edges: Record<string, string>;
   preview?: EdgePatch[] | null;
+  linePreview?: { start: { x: number; y: number }; end: { x: number; y: number }; color: string | null } | null;
   width: number;
   height: number;
   gridSize: number;
   offsetX: number;
   offsetY: number;
 }) {
+  const widthStroke = Math.max(6, gridSize * 0.12);
+  const line =
+    linePreview && (linePreview.start.x !== linePreview.end.x || linePreview.start.y !== linePreview.end.y)
+      ? {
+          a: cellOrigin(linePreview.start.x, linePreview.start.y, gridSize, offsetX, offsetY),
+          b: cellOrigin(linePreview.end.x, linePreview.end.y, gridSize, offsetX, offsetY),
+          color: linePreview.color ?? ERASE_PREVIEW,
+        }
+      : null;
+
   return (
-    <svg className="map-drawing edges" width={width} height={height}>
+    <svg className="map-drawing edges" {...drawingSvgProps(width, height)}>
       <EdgeLines edges={edges} gridSize={gridSize} offsetX={offsetX} offsetY={offsetY} />
       {preview && preview.length > 0 ? (
         <EdgeLines
@@ -156,10 +180,50 @@ export function EdgeLayer({
           gridSize={gridSize}
           offsetX={offsetX}
           offsetY={offsetY}
-          opacity={0.7}
+          opacity={0.55}
           preview
         />
       ) : null}
+      {line ? (
+        <line
+          className="map-edge-preview-line"
+          x1={line.a.x}
+          y1={line.a.y}
+          x2={line.b.x}
+          y2={line.b.y}
+          stroke={line.color}
+          strokeWidth={widthStroke}
+          strokeLinecap="square"
+          opacity={0.9}
+        />
+      ) : null}
+    </svg>
+  );
+}
+
+export function GridLayer({
+  width,
+  height,
+  gridSize,
+  offsetX,
+  offsetY,
+}: {
+  width: number;
+  height: number;
+  gridSize: number;
+  offsetX: number;
+  offsetY: number;
+}) {
+  const vertical = gridLinePositions(width, gridSize, offsetX);
+  const horizontal = gridLinePositions(height, gridSize, offsetY);
+  return (
+    <svg className="map-drawing grid" {...drawingSvgProps(width, height)}>
+      {vertical.map((x) => (
+        <line key={`v${x}`} className="map-grid-line" x1={x} y1={0} x2={x} y2={height} />
+      ))}
+      {horizontal.map((y) => (
+        <line key={`h${y}`} className="map-grid-line" x1={0} y1={y} x2={width} y2={y} />
+      ))}
     </svg>
   );
 }

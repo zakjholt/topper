@@ -30,7 +30,9 @@ export {
   cellBoundsForMap,
   cellInBounds,
   cellKey,
+  clampCell,
   edgeKey,
+  edgeRunVertices,
   floodFill,
   mergeEdges,
   mergeFills,
@@ -38,5 +40,6 @@ export {
   parseEdgeKey,
   rectCells,
   rectEdges,
+  straightEdgeRun,
 } from "./drawing.ts";
 export type { CellBounds, CellPatch, EdgeDir, EdgePatch } from "./drawing.ts";

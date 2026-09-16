@@ -2,20 +2,21 @@ import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointer
 import {
   cellBoundsForMap,
   cellInBounds,
-  cellKey,
-  edgeKey,
+  clampCell,
+  edgeRunVertices,
   floodFill,
   getByPath,
   rectCells,
   rectEdges,
+  straightEdgeRun,
   type CellPatch,
   type EdgeDir,
   type EdgePatch,
 } from "@topper/shared";
 import { useTable } from "../table/TableProvider.tsx";
 import { uploadFile } from "../api.ts";
-import { EdgeLayer, FillLayer } from "./DrawingLayer.tsx";
-import { nearestEdge, worldToCell } from "./grid.ts";
+import { EdgeLayer, FillLayer, GridLayer } from "./DrawingLayer.tsx";
+import { closerEdgeVertex, nearestEdge, nearestVertex, worldToCell } from "./grid.ts";
 
 const PALETTE = [
   "#e8dcc4",
@@ -30,9 +31,20 @@ const PALETTE = [
   "#2a2116",
 ];
 
-function snap(value: number, size: number, enabled: boolean) {
+const ZOOM_MIN = 0.25;
+const ZOOM_MAX = 2.4;
+const ZOOM_SENSITIVITY = 0.0007;
+
+function wheelDeltaPixels(e: ReactWheelEvent<HTMLDivElement>) {
+  if (e.deltaMode === 1) return e.deltaY * 16;
+  if (e.deltaMode === 2) return e.deltaY * e.currentTarget.clientHeight;
+  return e.deltaY;
+}
+
+function snapToGrid(value: number, size: number, offset: number, enabled: boolean) {
   if (!enabled) return value;
-  return Math.round(value / size) * size;
+  const step = Math.max(1, size);
+  return Math.round((value - offset) / step) * step + offset;
 }
 
 type PanDrag = {
@@ -57,11 +69,15 @@ type TokenDrag = {
 type PaintDrag = {
   kind: "paint";
   mode: "fill" | "edge";
-  area: boolean;
+  rect: boolean;
+  flood: boolean;
   color: string | null;
   startCell: { x: number; y: number };
   currentCell: { x: number; y: number };
   startEdge: { x: number; y: number; dir: EdgeDir };
+  startVertex: { x: number; y: number };
+  currentVertex: { x: number; y: number };
+  axis: EdgeDir | null;
   moved: boolean;
   sent: Set<string>;
   cells: CellPatch[];
@@ -83,18 +99,43 @@ export function MapView() {
   const viewportRef = useRef<HTMLDivElement>(null);
   const [pan, setPan] = useState({ x: 40, y: 40 });
   const [zoom, setZoom] = useState(0.75);
+  const panRef = useRef(pan);
+  const zoomRef = useRef(zoom);
+  panRef.current = pan;
+  zoomRef.current = zoom;
   const [paintColor, setPaintColor] = useState<string | null>("#c4b49a");
   const [preview, setPreview] = useState<{
     kind: "fill" | "edge";
+    shape: "rect" | "line";
     start: { x: number; y: number };
     end: { x: number; y: number };
     color: string | null;
+    edges?: EdgePatch[];
   } | null>(null);
   const drag = useRef<Drag | null>(null);
+  const [panHeld, setPanHeld] = useState(false);
 
   const tokens = snapshot?.tokens ?? [];
   const isGm = snapshot?.table.role === "gm";
   const drawing = Boolean(isGm && (tool === "fill" || tool === "edge"));
+  const panOverride = panHeld;
+
+  useEffect(() => {
+    function syncPanHeld(e: KeyboardEvent) {
+      setPanHeld(e.ctrlKey);
+    }
+    function clearPanHeld() {
+      setPanHeld(false);
+    }
+    window.addEventListener("keydown", syncPanHeld);
+    window.addEventListener("keyup", syncPanHeld);
+    window.addEventListener("blur", clearPanHeld);
+    return () => {
+      window.removeEventListener("keydown", syncPanHeld);
+      window.removeEventListener("keyup", syncPanHeld);
+      window.removeEventListener("blur", clearPanHeld);
+    };
+  }, []);
 
   useEffect(() => {
     const node = viewportRef.current;
@@ -118,6 +159,7 @@ export function MapView() {
       ) {
         return;
       }
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
       const key = e.key.toLowerCase();
       if (key === "v" || key === "m") setTool("select");
       else if (key === "t") setTool("token");
@@ -134,14 +176,19 @@ export function MapView() {
     return cellBoundsForMap(map.width, map.height, map.gridSize, map.offsetX, map.offsetY);
   }, [map]);
 
-  const previewFills = useMemo(() => {
-    if (!preview || preview.kind !== "fill" || !bounds) return null;
-    return rectCells(preview.start.x, preview.start.y, preview.end.x, preview.end.y, preview.color, bounds);
-  }, [preview, bounds]);
+  const previewFills = preview?.kind === "fill" ? preview : null;
 
   const previewEdges = useMemo(() => {
     if (!preview || preview.kind !== "edge") return null;
+    if (preview.shape === "line") return preview.edges ?? null;
     return rectEdges(preview.start.x, preview.start.y, preview.end.x, preview.end.y, preview.color);
+  }, [preview]);
+
+  const previewLine = useMemo(() => {
+    if (!preview || preview.kind !== "edge" || preview.shape !== "line" || !preview.edges) return null;
+    const vertices = edgeRunVertices(preview.edges);
+    if (!vertices) return null;
+    return { ...vertices, color: preview.color };
   }, [preview]);
 
   if (!snapshot?.map) {
@@ -172,14 +219,22 @@ export function MapView() {
     e.preventDefault();
     const rect = e.currentTarget.getBoundingClientRect();
     const cursor = { x: e.clientX - rect.left, y: e.clientY - rect.top };
-    const worldX = (cursor.x - pan.x) / zoom;
-    const worldY = (cursor.y - pan.y) / zoom;
-    const next = Math.min(2.4, Math.max(0.25, zoom * (e.deltaY < 0 ? 1.1 : 0.9)));
-    setZoom(next);
-    setPan({
+    const currentZoom = zoomRef.current;
+    const currentPan = panRef.current;
+    const worldX = (cursor.x - currentPan.x) / currentZoom;
+    const worldY = (cursor.y - currentPan.y) / currentZoom;
+    const next = Math.min(
+      ZOOM_MAX,
+      Math.max(ZOOM_MIN, currentZoom * Math.exp(-wheelDeltaPixels(e) * ZOOM_SENSITIVITY)),
+    );
+    const nextPan = {
       x: cursor.x - worldX * next,
       y: cursor.y - worldY * next,
-    });
+    };
+    zoomRef.current = next;
+    panRef.current = nextPan;
+    setZoom(next);
+    setPan(nextPan);
   }
 
   function startPan(e: ReactPointerEvent<HTMLDivElement>) {
@@ -187,86 +242,109 @@ export function MapView() {
       kind: "pan",
       startX: e.clientX,
       startY: e.clientY,
-      originX: pan.x,
-      originY: pan.y,
+      originX: panRef.current.x,
+      originY: panRef.current.y,
       moved: false,
     };
     e.currentTarget.setPointerCapture(e.pointerId);
   }
 
+  function isPanGesture(e: { button: number; ctrlKey: boolean }) {
+    return e.button === 1 || e.ctrlKey;
+  }
+
+  function vertexFromClient(clientX: number, clientY: number) {
+    const world = worldFromClient(clientX, clientY);
+    return nearestVertex(world.x, world.y, mapState.gridSize, mapState.offsetX, mapState.offsetY);
+  }
+
+  function startVertexFromClient(edge: { x: number; y: number; dir: EdgeDir }, clientX: number, clientY: number) {
+    const world = worldFromClient(clientX, clientY);
+    return closerEdgeVertex(edge, world.x, world.y, mapState.gridSize, mapState.offsetX, mapState.offsetY);
+  }
+
   function paintAtPointer(current: PaintDrag, clientX: number, clientY: number) {
-    const cell = cellFromClient(clientX, clientY);
+    const raw = cellFromClient(clientX, clientY);
+    const cell = bounds ? clampCell(raw, bounds) : raw;
     if (cell.x !== current.startCell.x || cell.y !== current.startCell.y) current.moved = true;
     current.currentCell = cell;
 
-    if (current.area) {
-      if (current.moved) {
-        setPreview({
-          kind: current.mode,
-          start: current.startCell,
-          end: cell,
-          color: current.color,
-        });
-      }
+    if (current.mode === "fill" || current.rect) {
+      setPreview({
+        kind: current.mode,
+        shape: "rect",
+        start: current.startCell,
+        end: cell,
+        color: current.color,
+      });
       return;
     }
 
-    if (current.mode === "fill") {
-      if (!bounds || !cellInBounds(cell.x, cell.y, bounds)) return;
-      const key = cellKey(cell.x, cell.y);
-      if (current.sent.has(key)) return;
-      current.sent.add(key);
-      const patch = { x: cell.x, y: cell.y, color: current.color };
-      current.cells.push(patch);
-      send({ type: "paint_cells", cells: [patch], persist: false });
-      return;
+    const vertex = vertexFromClient(clientX, clientY);
+    if (vertex.x !== current.startVertex.x || vertex.y !== current.startVertex.y) current.moved = true;
+    current.currentVertex = vertex;
+    if (!current.axis) {
+      const dx = Math.abs(vertex.x - current.startVertex.x);
+      const dy = Math.abs(vertex.y - current.startVertex.y);
+      if (dx >= 1 || dy >= 1) current.axis = dx >= dy ? "h" : "v";
     }
-
-    const edge = edgeFromClient(clientX, clientY);
-    const key = edgeKey(edge.x, edge.y, edge.dir);
-    if (current.sent.has(key)) return;
-    current.sent.add(key);
-    const patch = { ...edge, color: current.color };
-    current.edges.push(patch);
-    send({ type: "paint_edges", edges: [patch], persist: false });
+    const edges = straightEdgeRun(
+      current.startEdge,
+      current.startVertex,
+      vertex,
+      current.axis,
+      current.color,
+    );
+    current.edges = edges;
+    setPreview({
+      kind: "edge",
+      shape: "line",
+      start: current.startVertex,
+      end: current.axis === "h" ? { x: vertex.x, y: current.startVertex.y } : { x: current.startVertex.x, y: vertex.y },
+      color: current.color,
+      edges,
+    });
   }
 
   function finishPaint(current: PaintDrag) {
     setPreview(null);
-    if (current.area) {
-      if (current.mode === "fill" && bounds) {
-        const cells = current.moved
-          ? rectCells(
+    if (current.mode === "fill") {
+      if (!bounds) return;
+      const cells =
+        !current.moved && current.flood
+          ? floodFill(mapState.fills, current.startCell, current.color, bounds)
+          : rectCells(
               current.startCell.x,
               current.startCell.y,
               current.currentCell.x,
               current.currentCell.y,
               current.color,
               bounds,
-            )
-          : floodFill(mapState.fills, current.startCell, current.color, bounds);
-        if (cells.length > 0) send({ type: "paint_cells", cells, persist: true });
-        return;
-      }
-      if (current.mode === "edge") {
-        const edges = current.moved
-          ? rectEdges(
-              current.startCell.x,
-              current.startCell.y,
-              current.currentCell.x,
-              current.currentCell.y,
-              current.color,
-            )
-          : [{ ...current.startEdge, color: current.color }];
-        if (edges.length > 0) send({ type: "paint_edges", edges, persist: true });
-      }
+            );
+      if (cells.length > 0) send({ type: "paint_cells", cells, persist: true });
       return;
     }
-    if (current.mode === "fill" && current.cells.length > 0) {
-      send({ type: "paint_cells", cells: current.cells, persist: true });
-    } else if (current.mode === "edge" && current.edges.length > 0) {
-      send({ type: "paint_edges", edges: current.edges, persist: true });
+    if (current.rect) {
+      const edges = current.moved
+        ? rectEdges(
+            current.startCell.x,
+            current.startCell.y,
+            current.currentCell.x,
+            current.currentCell.y,
+            current.color,
+          )
+        : [{ ...current.startEdge, color: current.color }];
+      if (edges.length > 0) send({ type: "paint_edges", edges, persist: true });
+      return;
     }
+    const edges = straightEdgeRun(
+      current.startEdge,
+      current.startVertex,
+      current.currentVertex,
+      current.axis,
+      current.color,
+    );
+    if (edges.length > 0) send({ type: "paint_edges", edges, persist: true });
   }
 
   function eraseAt(clientX: number, clientY: number) {
@@ -283,7 +361,7 @@ export function MapView() {
   }
 
   function onViewportPointerDown(e: ReactPointerEvent<HTMLDivElement>) {
-    if (e.button === 1) {
+    if (isPanGesture(e)) {
       e.preventDefault();
       startPan(e);
       return;
@@ -293,8 +371,8 @@ export function MapView() {
 
     if (tool === "token" && e.button === 0) {
       const world = worldFromClient(e.clientX, e.clientY);
-      const x = snap(world.x - mapState.gridSize / 2, mapState.gridSize, mapState.snap);
-      const y = snap(world.y - mapState.gridSize / 2, mapState.gridSize, mapState.snap);
+      const x = snapToGrid(world.x - mapState.gridSize / 2, mapState.gridSize, mapState.offsetX, mapState.snap);
+      const y = snapToGrid(world.y - mapState.gridSize / 2, mapState.gridSize, mapState.offsetY, mapState.snap);
       send({
         type: "place_token",
         x,
@@ -307,16 +385,22 @@ export function MapView() {
     }
 
     if (drawing && (tool === "fill" || tool === "edge")) {
-      const cell = cellFromClient(e.clientX, e.clientY);
+      const rawCell = cellFromClient(e.clientX, e.clientY);
+      const cell = tool === "fill" && bounds ? clampCell(rawCell, bounds) : rawCell;
       const edge = edgeFromClient(e.clientX, e.clientY);
+      const startVertex = startVertexFromClient(edge, e.clientX, e.clientY);
       const current: PaintDrag = {
         kind: "paint",
         mode: tool,
-        area: e.shiftKey,
+        rect: tool === "fill" || e.shiftKey,
+        flood: tool === "fill" && e.shiftKey,
         color: e.button === 2 || e.altKey ? null : paintColor,
         startCell: cell,
         currentCell: cell,
         startEdge: edge,
+        startVertex,
+        currentVertex: startVertex,
+        axis: null,
         moved: false,
         sent: new Set(),
         cells: [],
@@ -346,8 +430,8 @@ export function MapView() {
     if (current.kind === "token") {
       if (Math.hypot(e.clientX - current.startX, e.clientY - current.startY) > 3) current.moved = true;
       const world = worldFromClient(e.clientX, e.clientY);
-      const x = snap(world.x - current.originX, mapState.gridSize, mapState.snap);
-      const y = snap(world.y - current.originY, mapState.gridSize, mapState.snap);
+      const x = snapToGrid(world.x - current.originX, mapState.gridSize, mapState.offsetX, mapState.snap);
+      const y = snapToGrid(world.y - current.originY, mapState.gridSize, mapState.offsetY, mapState.snap);
       send({ type: "move_token", tokenId: current.id, x, y, persist: false });
       return;
     }
@@ -360,8 +444,8 @@ export function MapView() {
     if (!current) return;
     if (current.kind === "token") {
       const world = worldFromClient(e.clientX, e.clientY);
-      const x = snap(world.x - current.originX, mapState.gridSize, mapState.snap);
-      const y = snap(world.y - current.originY, mapState.gridSize, mapState.snap);
+      const x = snapToGrid(world.x - current.originX, mapState.gridSize, mapState.offsetX, mapState.snap);
+      const y = snapToGrid(world.y - current.originY, mapState.gridSize, mapState.offsetY, mapState.snap);
       send({ type: "move_token", tokenId: current.id, x, y, persist: true });
       if (!current.moved) {
         const token = tokens.find((t) => t.id === current.id);
@@ -378,6 +462,7 @@ export function MapView() {
   }
 
   function onTokenPointerDown(e: ReactPointerEvent<HTMLButtonElement>, tokenId: string) {
+    if (isPanGesture(e)) return;
     if (tool === "token" || drawing) return;
     if (e.button !== 0) return;
     e.stopPropagation();
@@ -409,7 +494,11 @@ export function MapView() {
     img.src = url;
   }
 
-  const viewportClass = ["map-viewport", tool === "token" || drawing ? "placing" : ""]
+  const viewportClass = [
+    "map-viewport",
+    tool === "token" || drawing ? "placing" : "",
+    panOverride ? "panning" : "",
+  ]
     .filter(Boolean)
     .join(" ");
 
@@ -510,7 +599,11 @@ export function MapView() {
                 onChange={(evt) => setPaintColor(evt.target.value)}
               />
             </label>
-            <p className="toolbar-hint">Drag to paint · Right-click erases · Shift flood / rectangle</p>
+            <p className="toolbar-hint">
+              {tool === "fill"
+                ? "Drag a rectangle · Click a cell · Shift-click flood · Right-click erases · Ctrl-drag pans"
+                : "Drag a straight wall · Click an edge · Shift-drag a rectangle · Right-click erases · Ctrl-drag pans"}
+            </p>
           </div>
         ) : null}
       </div>
@@ -524,7 +617,7 @@ export function MapView() {
         onPointerCancel={endDrag}
         onContextMenu={(evt) => {
           evt.preventDefault();
-          if (!drawing || drag.current) return;
+          if (evt.ctrlKey || !drawing || drag.current) return;
           eraseAt(evt.clientX, evt.clientY);
         }}
         onAuxClick={(evt) => evt.preventDefault()}
@@ -551,18 +644,17 @@ export function MapView() {
             offsetX={mapState.offsetX}
             offsetY={mapState.offsetY}
           />
-          <div
-            className="map-grid"
-            style={{
-              backgroundImage: `linear-gradient(to right, rgba(210,177,122,0.22) 1px, transparent 1px),
-                linear-gradient(to bottom, rgba(210,177,122,0.22) 1px, transparent 1px)`,
-              backgroundSize: `${mapState.gridSize}px ${mapState.gridSize}px`,
-              backgroundPosition: `${mapState.offsetX}px ${mapState.offsetY}px`,
-            }}
+          <GridLayer
+            width={mapState.width}
+            height={mapState.height}
+            gridSize={mapState.gridSize}
+            offsetX={mapState.offsetX}
+            offsetY={mapState.offsetY}
           />
           <EdgeLayer
             edges={mapState.edges ?? {}}
             preview={previewEdges}
+            linePreview={previewLine}
             width={mapState.width}
             height={mapState.height}
             gridSize={mapState.gridSize}
@@ -587,7 +679,7 @@ export function MapView() {
                   top: token.y,
                   backgroundImage: token.imageUrl || portrait ? `url(${token.imageUrl || portrait})` : undefined,
                   backgroundSize: "cover",
-                  pointerEvents: drawing ? "none" : undefined,
+                  pointerEvents: drawing || panOverride ? "none" : undefined,
                 }}
                 onPointerDown={(evt) => onTokenPointerDown(evt, token.id)}
               >

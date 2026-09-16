@@ -14,6 +14,57 @@ async function shot(page, name) {
   return file;
 }
 
+async function assertWorldAligned(page, label) {
+  const result = await page.evaluate(() => {
+    const vertical = [...document.querySelectorAll("svg.map-drawing.grid line")].filter(
+      (el) => el.getAttribute("x1") === el.getAttribute("x2"),
+    );
+    const horizontal = [...document.querySelectorAll("svg.map-drawing.grid line")].filter(
+      (el) => el.getAttribute("y1") === el.getAttribute("y2"),
+    );
+    const xs = [...new Set(vertical.map((el) => Number(el.getAttribute("x1"))))].sort((a, b) => a - b);
+    const ys = [...new Set(horizontal.map((el) => Number(el.getAttribute("y1"))))].sort((a, b) => a - b);
+    const issues = [];
+    if (xs.length < 2 || ys.length < 2) issues.push("grid lines missing");
+    const stepX = xs[1] - xs[0];
+    const stepY = ys[1] - ys[0];
+    const onLattice = (value, origin, step) => Math.abs(Math.round((value - origin) / step) * step + origin - value) < 0.01;
+    for (const rect of document.querySelectorAll("svg.map-drawing.fills rect:not(.map-fill-preview)")) {
+      const x = Number(rect.getAttribute("x"));
+      const y = Number(rect.getAttribute("y"));
+      const width = Number(rect.getAttribute("width"));
+      const height = Number(rect.getAttribute("height"));
+      if (!onLattice(x, xs[0], stepX) || !onLattice(y, ys[0], stepY)) issues.push(`fill ${x},${y} off grid`);
+      if (!onLattice(x + width, xs[0], stepX) || !onLattice(y + height, ys[0], stepY)) {
+        issues.push(`fill ${x},${y} size not on grid`);
+      }
+    }
+    for (const line of document.querySelectorAll("svg.map-drawing.edges line:not(.map-edge-preview-line)")) {
+      const x1 = Number(line.getAttribute("x1"));
+      const y1 = Number(line.getAttribute("y1"));
+      const x2 = Number(line.getAttribute("x2"));
+      const y2 = Number(line.getAttribute("y2"));
+      if (
+        !onLattice(x1, xs[0], stepX) ||
+        !onLattice(y1, ys[0], stepY) ||
+        !onLattice(x2, xs[0], stepX) ||
+        !onLattice(y2, ys[0], stepY)
+      ) {
+        issues.push(`edge ${x1},${y1}-${x2},${y2} off grid`);
+      }
+    }
+    for (const token of document.querySelectorAll(".token")) {
+      const x = parseFloat(token.style.left);
+      const y = parseFloat(token.style.top);
+      if (!onLattice(x, xs[0], stepX) || !onLattice(y, ys[0], stepY)) issues.push(`token ${x},${y} off grid`);
+    }
+    return { issues, sample: { xs: xs.slice(0, 4), ys: ys.slice(0, 4) } };
+  });
+  if (result.issues.length) {
+    throw new Error(`${label}: ${result.issues.join("; ")}`);
+  }
+}
+
 async function launch(role, headless, stamp) {
   const x = role === "gm" ? 40 : 720;
   return chromium.launchPersistentContext(`/tmp/topper-brave-${role}-${stamp}`, {
@@ -95,6 +146,10 @@ async function withBrowsers(headless) {
     await gm.mouse.up();
     await gm.locator("svg.map-drawing.fills rect").first().waitFor({ timeout: 15_000 });
     await player.locator("svg.map-drawing.fills rect").first().waitFor({ timeout: 15_000 });
+    const paintedBlock = await gm.locator("svg.map-drawing.fills rect").count();
+    if (paintedBlock < 4) {
+      throw new Error(`Fill drag should paint a rectangle, got ${paintedBlock} cells`);
+    }
     notes.push("GM painted floor cells; player sees them live");
     await shot(gm, "03b-gm-fill");
     await shot(player, "03c-player-sees-fill");
@@ -107,6 +162,7 @@ async function withBrowsers(headless) {
     await gm.locator("svg.map-drawing.edges line").first().waitFor({ state: "attached", timeout: 15_000 });
     await player.locator("svg.map-drawing.edges line").first().waitFor({ state: "attached", timeout: 15_000 });
     notes.push("GM painted walls; player sees them live");
+    await assertWorldAligned(gm, "after fill and edge");
     await shot(gm, "03d-gm-edge");
 
     await gm.getByRole("button", { name: "Fill" }).click();
@@ -151,6 +207,21 @@ async function withBrowsers(headless) {
     const afterPan = await gm.locator(".map-world").evaluate((el) => el.style.transform);
     if (beforePan === afterPan) throw new Error("Middle-mouse pan did not move the map");
     notes.push("Middle-mouse pan works while drawing");
+
+    const fillsBeforeCtrlPan = await gm.locator("svg.map-drawing.fills rect").count();
+    const beforeCtrlPan = await gm.locator(".map-world").evaluate((el) => el.style.transform);
+    await map.hover({ position: { x: paintX, y: paintY } });
+    await gm.keyboard.down("Control");
+    await gm.locator(".map-viewport.panning").waitFor();
+    await gm.mouse.down();
+    await gm.mouse.move(box.x + paintX + 110, box.y + paintY + 70, { steps: 6 });
+    await gm.mouse.up();
+    await gm.keyboard.up("Control");
+    const afterCtrlPan = await gm.locator(".map-world").evaluate((el) => el.style.transform);
+    if (beforeCtrlPan === afterCtrlPan) throw new Error("Ctrl-drag pan did not move the map");
+    const fillsAfterCtrlPan = await gm.locator("svg.map-drawing.fills rect").count();
+    if (fillsAfterCtrlPan !== fillsBeforeCtrlPan) throw new Error("Ctrl-drag pan painted fill cells");
+    notes.push("Ctrl-drag pans while drawing without painting");
     await gm.getByRole("button", { name: "Move" }).click();
 
     await gm.getByRole("button", { name: "New character" }).click();
@@ -170,6 +241,28 @@ async function withBrowsers(headless) {
     await gm.locator(".token").first().waitFor();
     await player.locator(".token").first().waitFor();
     notes.push("GM placed a token; player sees it");
+    await assertWorldAligned(gm, "after token place");
+
+    const gmToken = gm.locator(".token").first();
+    const tokenPos = await gmToken.evaluate((el) => ({ left: el.style.left, top: el.style.top }));
+    const tokenBox = await gmToken.boundingBox();
+    if (!tokenBox) throw new Error("GM token missing");
+    const beforeTokenPan = await gm.locator(".map-world").evaluate((el) => el.style.transform);
+    await gm.keyboard.down("Control");
+    await gm.locator(".map-viewport.panning").waitFor();
+    await gm.mouse.move(tokenBox.x + tokenBox.width / 2, tokenBox.y + tokenBox.height / 2);
+    await gm.mouse.down();
+    await gm.mouse.move(tokenBox.x + 130, tokenBox.y + 50, { steps: 6 });
+    await gm.mouse.up();
+    await gm.keyboard.up("Control");
+    const afterTokenPan = await gm.locator(".map-world").evaluate((el) => el.style.transform);
+    const tokenPosAfter = await gmToken.evaluate((el) => ({ left: el.style.left, top: el.style.top }));
+    if (beforeTokenPan === afterTokenPan) throw new Error("Ctrl-drag over token did not pan");
+    if (tokenPos.left !== tokenPosAfter.left || tokenPos.top !== tokenPosAfter.top) {
+      throw new Error("Ctrl-drag pan moved the token");
+    }
+    notes.push("Ctrl-drag pans over tokens without moving them");
+    await gm.locator(".map-viewport:not(.panning)").waitFor();
 
     await gm.locator(".token").first().click();
     await gm.getByRole("heading", { name: "Selected token" }).waitFor();

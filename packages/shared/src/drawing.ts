@@ -79,6 +79,13 @@ export function cellInBounds(x: number, y: number, bounds: CellBounds): boolean 
   return x >= bounds.minX && x <= bounds.maxX && y >= bounds.minY && y <= bounds.maxY;
 }
 
+export function clampCell(cell: { x: number; y: number }, bounds: CellBounds) {
+  return {
+    x: Math.min(bounds.maxX, Math.max(bounds.minX, cell.x)),
+    y: Math.min(bounds.maxY, Math.max(bounds.minY, cell.y)),
+  };
+}
+
 export function cellBoundsForMap(
   width: number,
   height: number,
@@ -172,4 +179,80 @@ export function rectEdges(
     edges.push({ x: maxX + 1, y, dir: "v", color });
   }
   return edges;
+}
+
+export function axisLineEdges(
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+  axis: EdgeDir,
+  color: string | null,
+): EdgePatch[] {
+  if (axis === "h") {
+    const y = start.y;
+    const minX = Math.min(start.x, end.x);
+    const maxX = Math.max(start.x, end.x);
+    const edges: EdgePatch[] = [];
+    for (let x = minX; x < maxX; x += 1) {
+      edges.push({ x, y, dir: "h", color });
+    }
+    return edges;
+  }
+  const x = start.x;
+  const minY = Math.min(start.y, end.y);
+  const maxY = Math.max(start.y, end.y);
+  const edges: EdgePatch[] = [];
+  for (let y = minY; y < maxY; y += 1) {
+    edges.push({ x, y, dir: "v", color });
+  }
+  return edges;
+}
+
+function sameEdge(
+  a: { x: number; y: number; dir: EdgeDir },
+  b: { x: number; y: number; dir: EdgeDir },
+) {
+  return a.x === b.x && a.y === b.y && a.dir === b.dir;
+}
+
+export function straightEdgeRun(
+  startEdge: { x: number; y: number; dir: EdgeDir },
+  startVertex: { x: number; y: number },
+  currentVertex: { x: number; y: number },
+  axis: EdgeDir | null,
+  color: string | null,
+): EdgePatch[] {
+  if (!axis) return [{ ...startEdge, color }];
+  const end =
+    axis === "h"
+      ? { x: currentVertex.x, y: startVertex.y }
+      : { x: startVertex.x, y: currentVertex.y };
+  const edges = axisLineEdges(startVertex, end, axis, color);
+  if (startEdge.dir === axis && !edges.some((edge) => sameEdge(edge, startEdge))) {
+    edges.push({ ...startEdge, color });
+  }
+  return edges.length > 0 ? edges : [{ ...startEdge, color }];
+}
+
+export function edgeRunVertices(edges: EdgePatch[]) {
+  const matching = edges.filter((edge) => edge.dir === edges[0]?.dir);
+  const first = matching[0];
+  if (!first) return null;
+  if (first.dir === "h") {
+    const y = first.y;
+    let minX = first.x;
+    let maxX = first.x + 1;
+    for (const edge of matching) {
+      minX = Math.min(minX, edge.x);
+      maxX = Math.max(maxX, edge.x + 1);
+    }
+    return { start: { x: minX, y }, end: { x: maxX, y } };
+  }
+  const x = first.x;
+  let minY = first.y;
+  let maxY = first.y + 1;
+  for (const edge of matching) {
+    minY = Math.min(minY, edge.y);
+    maxY = Math.max(maxY, edge.y + 1);
+  }
+  return { start: { x, y: minY }, end: { x, y: maxY } };
 }
