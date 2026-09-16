@@ -1,0 +1,31 @@
+{
+  "name": "@topper/server",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "db:migrate": "drizzle-kit push",
+    "db:push": "drizzle-kit push",
+    "db:studio": "drizzle-kit studio"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.13.8",
+    "@hono/node-ws": "^1.1.1",
+    "@topper/shared": "workspace:*",
+    "better-auth": "^1.2.5",
+    "dotenv": "^16.4.7",
+    "drizzle-orm": "^0.45.2",
+    "hono": "^4.7.4",
+    "postgres": "^3.4.5",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.9",
+    "@types/ws": "^8.18.1",
+    "drizzle-kit": "^0.31.10",
+    "tsx": "^4.19.3",
+    "typescript": "^5.7.3",
+    "ws": "^8.21.3"
+  }
+}

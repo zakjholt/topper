@@ -1,0 +1,553 @@
+<!DOCTYPE html><html lang="en"><head>
+    <script type="module">import { injectIntoGlobalHook } from "/@react-refresh";
+injectIntoGlobalHook(window);
+window.$RefreshReg$ = () => {};
+window.$RefreshSig$ = () => (type) => type;</script>
+
+    <script type="module" src="/@vite/client"></script>
+
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Topper</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&amp;family=Figtree:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+  <style type="text/css" data-vite-dev-id="/Users/zak/dev/topper/packages/web/src/styles.css">:root {
+  --ink: #16120c;
+  --felt: #14241c;
+  --wood: #2a1f16;
+  --wood-edge: #3a2c20;
+  --brass: #d2b17a;
+  --brass-dim: #9a7a45;
+  --parchment: #f0e4c8;
+  --parchment-ink: #2a2116;
+  --parchment-rule: #cbb896;
+  --blood: #a33a32;
+  --moss: #4f8a62;
+  --text: #f4ead6;
+  --muted: #b7a78c;
+  --danger: #e07a6c;
+  --shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+  --font-display: "Fraunces", "Palatino Linotype", serif;
+  --font-ui: "Figtree", "Segoe UI", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  font-family: var(--font-ui);
+  background: var(--ink);
+  color: var(--text);
+  min-height: 100%;
+}
+
+button,
+input,
+textarea,
+select {
+  font-family: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+a {
+  color: var(--brass);
+}
+
+.auth-page,
+.lobby-page {
+  min-height: 100%;
+  display: grid;
+  place-items: center;
+  padding: 32px 16px;
+  background:
+    radial-gradient(1200px 500px at 50% -10%, rgba(210, 177, 122, 0.16), transparent 55%),
+    repeating-linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.015) 0 1px,
+      transparent 1px 48px
+    ),
+    var(--ink);
+}
+
+.panel {
+  width: min(440px, 100%);
+  background: linear-gradient(180deg, #32251b, var(--wood));
+  border: 1px solid var(--brass-dim);
+  box-shadow: var(--shadow);
+  padding: 28px;
+}
+
+.lobby-page .panel {
+  width: min(720px, 100%);
+}
+
+.brand {
+  font-family: var(--font-display);
+  font-size: 2.2rem;
+  margin: 0 0 4px;
+  letter-spacing: 0.04em;
+}
+
+.lede {
+  margin: 0 0 24px;
+  color: var(--muted);
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin-bottom: 14px;
+}
+
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="number"],
+textarea,
+select {
+  background: #140f0b;
+  color: var(--text);
+  border: 1px solid #4a3b2c;
+  padding: 10px 12px;
+  border-radius: 2px;
+}
+
+textarea {
+  min-height: 88px;
+  resize: vertical;
+}
+
+.btn {
+  appearance: none;
+  border: 1px solid var(--brass-dim);
+  background: linear-gradient(180deg, #5a4630, #3c2e20);
+  color: var(--text);
+  padding: 10px 16px;
+  letter-spacing: 0.04em;
+}
+
+.btn:hover {
+  border-color: var(--brass);
+}
+
+.btn.primary {
+  background: linear-gradient(180deg, #c4a46a, #8d6b38);
+  color: #1b140c;
+  font-weight: 700;
+}
+
+.btn.ghost {
+  background: transparent;
+}
+
+.btn.danger {
+  border-color: var(--danger);
+  color: var(--danger);
+  background: transparent;
+}
+
+.btn.small {
+  padding: 6px 10px;
+  font-size: 0.8rem;
+}
+
+.row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.error {
+  color: var(--danger);
+  font-size: 0.9rem;
+}
+
+.table-list {
+  display: grid;
+  gap: 10px;
+  margin: 16px 0 24px;
+}
+
+.table-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: #1b140f;
+  border: 1px solid #4a3b2c;
+  color: inherit;
+  text-decoration: none;
+}
+
+.table-card strong {
+  font-family: var(--font-display);
+}
+
+.table-page {
+  height: 100%;
+  display: grid;
+  grid-template-columns: 1fr 340px;
+  background: var(--wood);
+}
+
+.map-stage {
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 30% 20%, rgba(79, 138, 98, 0.18), transparent 35%),
+    var(--felt);
+  border-right: 1px solid #1a120c;
+}
+
+.toolbar {
+  position: absolute;
+  z-index: 3;
+  top: 12px;
+  left: 12px;
+  display: flex;
+  gap: 6px;
+  padding: 8px;
+  background: rgba(22, 18, 12, 0.82);
+  border: 1px solid var(--brass-dim);
+}
+
+.map-viewport {
+  width: 100%;
+  height: 100%;
+  cursor: grab;
+}
+
+.map-viewport.placing {
+  cursor: crosshair;
+}
+
+.map-world {
+  position: relative;
+  transform-origin: 0 0;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55);
+}
+
+.map-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+  pointer-events: none;
+  user-select: none;
+}
+
+.map-blank {
+  width: 100%;
+  height: 100%;
+  background: #1c2a22;
+}
+
+.map-grid {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.token {
+  position: absolute;
+  border-radius: 50%;
+  border: 3px solid #1b140c;
+  box-shadow: 0 6px 0 rgba(0, 0, 0, 0.35);
+  display: grid;
+  place-items: center;
+  color: #1b140c;
+  font-weight: 700;
+  background: #d2b17a;
+  overflow: hidden;
+  user-select: none;
+}
+
+.token.selected {
+  border-color: #fff4d6;
+  box-shadow: 0 0 0 3px var(--brass), 0 6px 0 rgba(0, 0, 0, 0.35);
+}
+
+.token img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+}
+
+.token-label {
+  position: absolute;
+  left: 50%;
+  top: calc(100% + 4px);
+  transform: translateX(-50%);
+  font-size: 11px;
+  background: rgba(22, 18, 12, 0.9);
+  color: var(--text);
+  padding: 1px 6px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  background: #221910;
+  min-height: 0;
+}
+
+.sidebar-header {
+  padding: 16px 16px 12px;
+  border-bottom: 1px solid #3a2c20;
+}
+
+.sidebar-header h1 {
+  font-family: var(--font-display);
+  font-size: 1.4rem;
+  margin: 0;
+}
+
+.invite {
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.sidebar-scroll {
+  overflow: auto;
+  padding: 12px 16px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 0;
+  flex: 1;
+}
+
+.section h2 {
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--brass);
+  margin: 0 0 8px;
+}
+
+.member,
+.char-row,
+.log-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(74, 59, 44, 0.6);
+  font-size: 0.92rem;
+}
+
+.char-row button.link {
+  background: none;
+  border: none;
+  color: var(--text);
+  padding: 0;
+  text-align: left;
+}
+
+.role-pill {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--brass);
+}
+
+.dice-form {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px;
+}
+
+.log-row .total {
+  font-variant-numeric: tabular-nums;
+  color: var(--brass);
+  font-weight: 700;
+}
+
+.sheet-drawer {
+  position: absolute;
+  z-index: 4;
+  top: 12px;
+  right: 352px;
+  width: min(420px, calc(100% - 380px));
+  max-height: calc(100% - 24px);
+  overflow: auto;
+  background: var(--parchment);
+  color: var(--parchment-ink);
+  border: 1px solid var(--brass);
+  box-shadow: var(--shadow);
+  padding: 18px 18px 24px;
+}
+
+.sheet-drawer h2,
+.sheet-drawer h3 {
+  font-family: var(--font-display);
+  margin: 0;
+}
+
+.sheet-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 2px solid var(--parchment-ink);
+}
+
+.sheet-section {
+  margin: 16px 0;
+}
+
+.sheet-section h3 {
+  font-size: 1rem;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--parchment-rule);
+  padding-bottom: 4px;
+}
+
+.sheet-drawer input,
+.sheet-drawer textarea,
+.sheet-drawer select {
+  background: rgba(255, 255, 255, 0.35);
+  color: var(--parchment-ink);
+  border: 1px solid var(--parchment-rule);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 10px;
+  font-size: 0.82rem;
+}
+
+.field-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.field-grid.cols-2 {
+  grid-template-columns: 1fr 1fr;
+}
+
+.field-grid.cols-3 {
+  grid-template-columns: 1fr 1fr 1fr;
+}
+
+.resource-bar {
+  display: grid;
+  gap: 6px;
+}
+
+.resource-track {
+  height: 10px;
+  background: #cbb896;
+  border: 1px solid #8d7350;
+}
+
+.resource-fill {
+  height: 100%;
+  background: var(--blood);
+}
+
+.resource-inputs {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 6px;
+  align-items: center;
+}
+
+.portrait-widget {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.portrait-widget img,
+.portrait-widget .placeholder {
+  width: 72px;
+  height: 72px;
+  object-fit: cover;
+  background: #d9c7a1;
+  border: 1px solid #8d7350;
+}
+
+.list-row {
+  display: grid;
+  grid-template-columns: 1fr 80px auto;
+  gap: 6px;
+  margin-bottom: 6px;
+  align-items: center;
+}
+
+.list-row.custom {
+  grid-template-columns: 1fr 1fr auto;
+}
+
+.list-row.resource {
+  grid-template-columns: 1fr 70px 70px auto;
+}
+
+.stat-mod {
+  color: #6a5436;
+  font-size: 0.78rem;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.sheet-drawer .muted {
+  color: #6a5436;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  margin-right: 6px;
+  background: var(--moss);
+}
+
+.status-dot.off {
+  background: #6a5436;
+}
+
+@media (max-width: 900px) {
+  .table-page {
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr 42vh;
+  }
+
+  .sheet-drawer {
+    right: 12px;
+    width: calc(100% - 24px);
+  }
+}
+</style></head>
+  <body>
+    <div id="root"><div class="lobby-page"><div class="panel"><div class="row" style="justify-content: space-between; align-items: baseline;"><div><p class="brand">Topper</p><p class="lede">Welcome, GM Gale.</p></div><button class="btn ghost" type="button">Sign out</button></div><h2>Your tables</h2><div class="table-list"><a class="table-card" href="/t/64e87939-18dc-4509-b10a-e15932e6970c" data-discover="true"><span><strong>The Bronze Bell</strong><div class="muted">GM · code 7Q7ENQZ4</div></span><span class="muted">Open →</span></a></div><div class="row" style="align-items: start;"><form style="flex: 1 1 0%;"><label>New table<input value="Friday night" style=""></label><button class="btn primary" type="submit">Host</button></form><form style="flex: 1 1 0%;"><label>Invite code<input placeholder="ABCD2345" value="" style=""></label><button class="btn" type="submit">Join</button></form></div></div></div></div>
+    <script type="module" src="/src/main.tsx"></script>
+  
+
+</body></html>
