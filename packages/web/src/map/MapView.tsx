@@ -17,19 +17,7 @@ import { useTable } from "../table/TableProvider.tsx";
 import { uploadFile } from "../api.ts";
 import { EdgeLayer, FillLayer, GridLayer } from "./DrawingLayer.tsx";
 import { closerEdgeVertex, nearestEdge, nearestVertex, worldToCell } from "./grid.ts";
-
-const PALETTE = [
-  "#e8dcc4",
-  "#c4b49a",
-  "#6b6358",
-  "#5c4033",
-  "#8b5a2b",
-  "#3a5a7a",
-  "#4f8a62",
-  "#3d4f3a",
-  "#a33a32",
-  "#2a2116",
-];
+import { Toolbar } from "./Toolbar.tsx";
 
 const ZOOM_MIN = 0.25;
 const ZOOM_MAX = 2.4;
@@ -114,6 +102,7 @@ export function MapView() {
   } | null>(null);
   const drag = useRef<Drag | null>(null);
   const [panHeld, setPanHeld] = useState(false);
+  const [mapBusy, setMapBusy] = useState(false);
 
   const tokens = snapshot?.tokens ?? [];
   const isGm = snapshot?.table.role === "gm";
@@ -146,29 +135,6 @@ export function MapView() {
     node.addEventListener("wheel", prevent, { passive: false });
     return () => node.removeEventListener("wheel", prevent);
   }, [snapshot]);
-
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      const target = e.target as HTMLElement | null;
-      if (
-        target &&
-        (target.tagName === "INPUT" ||
-          target.tagName === "TEXTAREA" ||
-          target.tagName === "SELECT" ||
-          target.isContentEditable)
-      ) {
-        return;
-      }
-      if (e.ctrlKey || e.metaKey || e.altKey) return;
-      const key = e.key.toLowerCase();
-      if (key === "v" || key === "m") setTool("select");
-      else if (key === "t") setTool("token");
-      else if (isGm && key === "f") setTool("fill");
-      else if (isGm && key === "e") setTool("edge");
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [isGm, setTool]);
 
   const map = snapshot?.map;
   const bounds = useMemo(() => {
@@ -363,6 +329,7 @@ export function MapView() {
   function onViewportPointerDown(e: ReactPointerEvent<HTMLDivElement>) {
     if (isPanGesture(e)) {
       e.preventDefault();
+      setMapBusy(true);
       startPan(e);
       return;
     }
@@ -407,12 +374,14 @@ export function MapView() {
         edges: [],
       };
       drag.current = current;
+      setMapBusy(true);
       e.currentTarget.setPointerCapture(e.pointerId);
       paintAtPointer(current, e.clientX, e.clientY);
       return;
     }
 
     if (e.button !== 0) return;
+    setMapBusy(true);
     startPan(e);
   }
 
@@ -441,6 +410,7 @@ export function MapView() {
   function endDrag(e: ReactPointerEvent<HTMLDivElement>) {
     const current = drag.current;
     drag.current = null;
+    setMapBusy(false);
     if (!current) return;
     if (current.kind === "token") {
       const world = worldFromClient(e.clientX, e.clientY);
@@ -478,6 +448,7 @@ export function MapView() {
       originY: world.y - token.y,
       moved: false,
     };
+    setMapBusy(true);
     e.currentTarget.setPointerCapture(e.pointerId);
   }
 
@@ -504,109 +475,12 @@ export function MapView() {
 
   return (
     <div className="map-stage">
-      <div className="toolbar">
-        <div className="toolbar-row">
-          <button
-            className={`btn small ${tool === "select" ? "primary" : ""}`}
-            type="button"
-            onClick={() => setTool("select")}
-          >
-            Move
-          </button>
-          {isGm ? (
-            <>
-              <button
-                className={`btn small ${tool === "fill" ? "primary" : ""}`}
-                type="button"
-                onClick={() => setTool("fill")}
-              >
-                Fill
-              </button>
-              <button
-                className={`btn small ${tool === "edge" ? "primary" : ""}`}
-                type="button"
-                onClick={() => setTool("edge")}
-              >
-                Edge
-              </button>
-            </>
-          ) : null}
-          <button
-            className={`btn small ${tool === "token" ? "primary" : ""}`}
-            type="button"
-            onClick={() => setTool("token")}
-          >
-            Place token
-          </button>
-          {isGm ? (
-            <>
-              <label className="btn small" style={{ margin: 0 }}>
-                Map image
-                <input
-                  type="file"
-                  accept="image/*"
-                  hidden
-                  onChange={(evt) => void onUploadMap(evt.target.files?.[0])}
-                />
-              </label>
-              <button
-                className="btn small"
-                type="button"
-                onClick={() => send({ type: "update_map", patch: { snap: !mapState.snap } })}
-              >
-                Snap {mapState.snap ? "on" : "off"}
-              </button>
-              <label className="btn small" style={{ margin: 0, display: "flex", alignItems: "center", gap: 6 }}>
-                Grid
-                <input
-                  type="number"
-                  min={20}
-                  max={200}
-                  value={mapState.gridSize}
-                  onChange={(evt) =>
-                    send({ type: "update_map", patch: { gridSize: Number(evt.target.value) || 70 } })
-                  }
-                  style={{ width: 64 }}
-                />
-              </label>
-            </>
-          ) : null}
-        </div>
-        {drawing ? (
-          <div className="toolbar-palette">
-            <button
-              type="button"
-              className={`swatch erase ${paintColor === null ? "active" : ""}`}
-              aria-label="Erase"
-              title="Erase"
-              onClick={() => setPaintColor(null)}
-            />
-            {PALETTE.map((color) => (
-              <button
-                key={color}
-                type="button"
-                className={`swatch ${paintColor === color ? "active" : ""}`}
-                style={{ background: color }}
-                aria-label={color}
-                title={color}
-                onClick={() => setPaintColor(color)}
-              />
-            ))}
-            <label className="swatch custom" title="Custom color">
-              <input
-                type="color"
-                value={paintColor ?? "#c4b49a"}
-                onChange={(evt) => setPaintColor(evt.target.value)}
-              />
-            </label>
-            <p className="toolbar-hint">
-              {tool === "fill"
-                ? "Drag a rectangle · Click a cell · Shift-click flood · Right-click erases · Ctrl-drag pans"
-                : "Drag a straight wall · Click an edge · Shift-drag a rectangle · Right-click erases · Ctrl-drag pans"}
-            </p>
-          </div>
-        ) : null}
-      </div>
+      <Toolbar
+        paintColor={paintColor}
+        setPaintColor={setPaintColor}
+        mapBusy={mapBusy}
+        onUploadMap={(file) => void onUploadMap(file)}
+      />
       <div
         ref={viewportRef}
         className={viewportClass}
