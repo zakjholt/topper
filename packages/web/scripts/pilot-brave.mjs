@@ -73,6 +73,86 @@ async function withBrowsers(headless) {
     notes.push("Player joined; both see each other in People");
     await shot(player, "03-player-joined");
 
+    await gm.getByRole("button", { name: "Fill" }).waitFor();
+    if ((await player.getByRole("button", { name: "Fill" }).count()) > 0) {
+      throw new Error("Player can see Fill");
+    }
+    if ((await player.getByRole("button", { name: "Edge" }).count()) > 0) {
+      throw new Error("Player can see Edge");
+    }
+    notes.push("Player chrome has no Fill/Edge tools");
+
+    await gm.getByRole("button", { name: "Fill" }).click();
+    await gm.locator(".toolbar-palette").waitFor();
+    const map = gm.locator(".map-viewport");
+    const box = await map.boundingBox();
+    if (!box) throw new Error("Map viewport missing");
+    const paintX = Math.min(460, box.width * 0.48);
+    const paintY = Math.min(420, box.height * 0.64);
+    await map.hover({ position: { x: paintX, y: paintY } });
+    await gm.mouse.down();
+    await gm.mouse.move(box.x + paintX + 140, box.y + paintY + 90, { steps: 10 });
+    await gm.mouse.up();
+    await gm.locator("svg.map-drawing.fills rect").first().waitFor({ timeout: 15_000 });
+    await player.locator("svg.map-drawing.fills rect").first().waitFor({ timeout: 15_000 });
+    notes.push("GM painted floor cells; player sees them live");
+    await shot(gm, "03b-gm-fill");
+    await shot(player, "03c-player-sees-fill");
+
+    await gm.getByRole("button", { name: "Edge" }).click();
+    await map.hover({ position: { x: paintX, y: paintY } });
+    await gm.mouse.down();
+    await gm.mouse.move(box.x + paintX + 150, box.y + paintY, { steps: 8 });
+    await gm.mouse.up();
+    await gm.locator("svg.map-drawing.edges line").first().waitFor({ state: "attached", timeout: 15_000 });
+    await player.locator("svg.map-drawing.edges line").first().waitFor({ state: "attached", timeout: 15_000 });
+    notes.push("GM painted walls; player sees them live");
+    await shot(gm, "03d-gm-edge");
+
+    await gm.getByRole("button", { name: "Fill" }).click();
+    const fillCount = await gm.locator("svg.map-drawing.fills rect").count();
+    await map.click({ button: "right", position: { x: paintX, y: paintY } });
+    await gm.waitForFunction(
+      (prev) => document.querySelectorAll("svg.map-drawing.fills rect").length < prev,
+      fillCount,
+    );
+    await player.waitForFunction(
+      (prev) => document.querySelectorAll("svg.map-drawing.fills rect").length < prev,
+      fillCount,
+    );
+    notes.push("Right-click erase synced to the player");
+    const afterErase = await gm.locator("svg.map-drawing.fills rect").count();
+
+    await gm.locator('.swatch[title="#3a5a7a"]').click();
+    await map.hover({
+      position: { x: Math.min(box.width * 0.72, box.width - 40), y: Math.min(box.height * 0.72, box.height - 40) },
+    });
+    await gm.keyboard.down("Shift");
+    await gm.mouse.down();
+    await gm.mouse.up();
+    await gm.keyboard.up("Shift");
+    await gm.waitForFunction(
+      (prev) => document.querySelectorAll("svg.map-drawing.fills rect").length > prev,
+      afterErase,
+    );
+    await player.waitForFunction(
+      (prev) => document.querySelectorAll("svg.map-drawing.fills rect").length > prev,
+      afterErase,
+    );
+    notes.push("Shift-click flood fill synced to the player");
+    await shot(gm, "03e-gm-flood");
+    await shot(player, "03f-player-flood");
+
+    const beforePan = await gm.locator(".map-world").evaluate((el) => el.style.transform);
+    await map.hover({ position: { x: paintX, y: paintY } });
+    await gm.mouse.down({ button: "middle" });
+    await gm.mouse.move(box.x + paintX + 120, box.y + paintY + 50, { steps: 6 });
+    await gm.mouse.up({ button: "middle" });
+    const afterPan = await gm.locator(".map-world").evaluate((el) => el.style.transform);
+    if (beforePan === afterPan) throw new Error("Middle-mouse pan did not move the map");
+    notes.push("Middle-mouse pan works while drawing");
+    await gm.getByRole("button", { name: "Move" }).click();
+
     await gm.getByRole("button", { name: "New character" }).click();
     await gm.getByRole("button", { name: "Unnamed", exact: true }).waitFor();
     await player.getByRole("button", { name: "Unnamed", exact: true }).waitFor();
@@ -86,9 +166,6 @@ async function withBrowsers(headless) {
     await shot(player, "05-player-sees-branwen");
 
     await gm.getByRole("button", { name: "Place token" }).click();
-    const map = gm.locator(".map-viewport");
-    const box = await map.boundingBox();
-    if (!box) throw new Error("Map viewport missing");
     await map.click({ position: { x: Math.min(240, box.width * 0.35), y: Math.min(260, box.height * 0.45) } });
     await gm.locator(".token").first().waitFor();
     await player.locator(".token").first().waitFor();
@@ -132,7 +209,9 @@ async function withBrowsers(headless) {
     await gm.getByRole("button", { name: "Priya", exact: true }).waitFor();
     await gm.locator(".token").first().waitFor();
     await gm.locator(".log-row").filter({ hasText: "d20+4" }).waitFor();
-    notes.push("GM refresh restored characters, token, and dice log");
+    await gm.locator("svg.map-drawing.fills rect").first().waitFor();
+    await gm.locator("svg.map-drawing.edges line").first().waitFor({ state: "attached" });
+    notes.push("GM refresh restored characters, token, dice log, and drawing");
     await shot(gm, "11-gm-refresh");
 
     return notes;

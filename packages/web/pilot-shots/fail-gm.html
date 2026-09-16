@@ -27,6 +27,8 @@ window.$RefreshSig$ = () => (type) => type;</script>
   --text: #f4ead6;
   --muted: #b7a78c;
   --danger: #e07a6c;
+  --field: #241910;
+  --field-line: #6a5642;
   --shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
   --font-display: "Fraunces", "Palatino Linotype", serif;
   --font-ui: "Figtree", "Segoe UI", sans-serif;
@@ -105,6 +107,16 @@ a {
   color: var(--muted);
 }
 
+.auth-page,
+.lobby-page,
+.table-page {
+  color-scheme: dark;
+}
+
+.sheet-drawer {
+  color-scheme: light;
+}
+
 label {
   display: flex;
   flex-direction: column;
@@ -114,17 +126,42 @@ label {
   margin-bottom: 14px;
 }
 
-input[type="text"],
-input[type="email"],
-input[type="password"],
-input[type="number"],
+input:not([type="checkbox"]):not([type="file"]):not([type="radio"]):not([type="hidden"]),
 textarea,
 select {
-  background: #140f0b;
+  appearance: none;
+  width: 100%;
+  min-height: 42px;
+  background: var(--field);
   color: var(--text);
-  border: 1px solid #4a3b2c;
+  border: 1px solid var(--field-line);
   padding: 10px 12px;
   border-radius: 2px;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+input:not([type="checkbox"]):not([type="file"]):not([type="radio"]):not([type="hidden"]):focus,
+textarea:focus,
+select:focus {
+  outline: none;
+  border-color: var(--brass);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #8a7a64;
+  opacity: 1;
+}
+
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+textarea:-webkit-autofill,
+select:-webkit-autofill {
+  -webkit-text-fill-color: var(--text);
+  caret-color: var(--text);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35), 0 0 0 1000px var(--field) inset;
+  transition: background-color 99999s ease-out;
 }
 
 textarea {
@@ -221,16 +258,92 @@ textarea {
   top: 12px;
   left: 12px;
   display: flex;
-  gap: 6px;
+  flex-direction: column;
+  gap: 8px;
   padding: 8px;
   background: rgba(22, 18, 12, 0.82);
   border: 1px solid var(--brass-dim);
+  max-width: calc(100% - 24px);
+}
+
+.toolbar-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.toolbar-palette {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.swatch {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid #1b140c;
+  border-radius: 4px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+
+.swatch.active {
+  box-shadow: 0 0 0 2px var(--brass), inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+
+.swatch.erase {
+  background:
+    linear-gradient(45deg, #3a2c20 25%, transparent 25%, transparent 75%, #3a2c20 75%),
+    linear-gradient(45deg, #3a2c20 25%, #f0e4c8 25%, #f0e4c8 75%, #3a2c20 75%);
+  background-size: 10px 10px;
+  background-position: 0 0, 5px 5px;
+}
+
+.swatch.custom {
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+}
+
+.swatch.custom input {
+  width: 28px;
+  height: 28px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  transform: scale(1.4);
+  cursor: pointer;
+}
+
+.toolbar-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+  width: 100%;
+}
+
+.toolbar input:not([type="checkbox"]):not([type="file"]):not([type="color"]) {
+  width: auto;
+  min-height: 28px;
+  padding: 4px 6px;
+}
+
+.map-drawing {
+  position: absolute;
+  left: 0;
+  top: 0;
+  overflow: visible;
+  pointer-events: none;
 }
 
 .map-viewport {
   width: 100%;
   height: 100%;
   cursor: grab;
+  touch-action: none;
 }
 
 .map-viewport.placing {
@@ -266,6 +379,7 @@ textarea {
 
 .token {
   position: absolute;
+  z-index: 2;
   border-radius: 50%;
   border: 3px solid #1b140c;
   box-shadow: 0 6px 0 rgba(0, 0, 0, 0.35);
@@ -427,9 +541,18 @@ textarea {
 .sheet-drawer input,
 .sheet-drawer textarea,
 .sheet-drawer select {
-  background: rgba(255, 255, 255, 0.35);
+  background: #eadcc0;
   color: var(--parchment-ink);
   border: 1px solid var(--parchment-rule);
+  box-shadow: inset 0 1px 1px rgba(80, 60, 30, 0.12);
+}
+
+.sheet-drawer input:-webkit-autofill,
+.sheet-drawer input:-webkit-autofill:hover,
+.sheet-drawer input:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--parchment-ink);
+  caret-color: var(--parchment-ink);
+  box-shadow: 0 0 0 1000px #eadcc0 inset;
 }
 
 .field {
@@ -546,8 +669,8 @@ textarea {
 }
 </style></head>
   <body>
-    <div id="root"><div class="lobby-page"><div class="panel"><div class="row" style="justify-content: space-between; align-items: baseline;"><div><p class="brand">Topper</p><p class="lede">Welcome, GM Gale.</p></div><button class="btn ghost" type="button">Sign out</button></div><h2>Your tables</h2><div class="table-list"><a class="table-card" href="/t/64e87939-18dc-4509-b10a-e15932e6970c" data-discover="true"><span><strong>The Bronze Bell</strong><div class="muted">GM · code 7Q7ENQZ4</div></span><span class="muted">Open →</span></a></div><div class="row" style="align-items: start;"><form style="flex: 1 1 0%;"><label>New table<input value="Friday night" style=""></label><button class="btn primary" type="submit">Host</button></form><form style="flex: 1 1 0%;"><label>Invite code<input placeholder="ABCD2345" value="" style=""></label><button class="btn" type="submit">Join</button></form></div></div></div></div>
-    <script type="module" src="/src/main.tsx"></script>
+    <div id="root"><div class="table-page"><div class="map-stage"><div class="toolbar"><div class="toolbar-row"><button class="btn small " type="button">Move</button><button class="btn small " type="button">Fill</button><button class="btn small primary" type="button">Edge</button><button class="btn small " type="button">Place token</button><label class="btn small" style="margin: 0px;">Map image<input accept="image/*" hidden="" type="file" style=""></label><button class="btn small" type="button">Snap on</button><label class="btn small" style="margin: 0px; display: flex; align-items: center; gap: 6px;">Grid<input min="20" max="200" type="number" value="70" style="width: 64px;"></label></div><div class="toolbar-palette"><button type="button" class="swatch erase " aria-label="Erase" title="Erase"></button><button type="button" class="swatch " aria-label="#e8dcc4" title="#e8dcc4" style="background: rgb(232, 220, 196);"></button><button type="button" class="swatch active" aria-label="#c4b49a" title="#c4b49a" style="background: rgb(196, 180, 154);"></button><button type="button" class="swatch " aria-label="#6b6358" title="#6b6358" style="background: rgb(107, 99, 88);"></button><button type="button" class="swatch " aria-label="#5c4033" title="#5c4033" style="background: rgb(92, 64, 51);"></button><button type="button" class="swatch " aria-label="#8b5a2b" title="#8b5a2b" style="background: rgb(139, 90, 43);"></button><button type="button" class="swatch " aria-label="#3a5a7a" title="#3a5a7a" style="background: rgb(58, 90, 122);"></button><button type="button" class="swatch " aria-label="#4f8a62" title="#4f8a62" style="background: rgb(79, 138, 98);"></button><button type="button" class="swatch " aria-label="#3d4f3a" title="#3d4f3a" style="background: rgb(61, 79, 58);"></button><button type="button" class="swatch " aria-label="#a33a32" title="#a33a32" style="background: rgb(163, 58, 50);"></button><button type="button" class="swatch " aria-label="#2a2116" title="#2a2116" style="background: rgb(42, 33, 22);"></button><label class="swatch custom" title="Custom color"><input type="color" value="#c4b49a" style=""></label><p class="toolbar-hint">Drag to paint · Right-click erases · Shift flood / rectangle</p></div></div><div class="map-viewport placing"><div class="map-world" style="width: 2000px; height: 1400px; transform: translate(40px, 40px) scale(0.75);"><div class="map-blank"></div><svg class="map-drawing fills" width="2000" height="1400"><rect x="490" y="490" width="70" height="70" fill="#c4b49a" opacity="1"></rect><rect x="560" y="490" width="70" height="70" fill="#c4b49a" opacity="1"></rect><rect x="630" y="560" width="70" height="70" fill="#c4b49a" opacity="1"></rect><rect x="700" y="560" width="70" height="70" fill="#c4b49a" opacity="1"></rect></svg><div class="map-grid" style="background-image: linear-gradient(to right, rgba(210, 177, 122, 0.22) 1px, transparent 1px), linear-gradient(rgba(210, 177, 122, 0.22) 1px, transparent 1px); background-size: 70px 70px; background-position: 0px 0px;"></div><svg class="map-drawing edges" width="2000" height="1400"><line x1="560" y1="490" x2="630" y2="490" stroke="#c4b49a" stroke-width="8.4" stroke-linecap="square" opacity="1"></line><line x1="630" y1="490" x2="630" y2="560" stroke="#c4b49a" stroke-width="8.4" stroke-linecap="square" opacity="1"></line><line x1="630" y1="490" x2="700" y2="490" stroke="#c4b49a" stroke-width="8.4" stroke-linecap="square" opacity="1"></line><line x1="700" y1="490" x2="700" y2="560" stroke="#c4b49a" stroke-width="8.4" stroke-linecap="square" opacity="1"></line><line x1="700" y1="490" x2="770" y2="490" stroke="#c4b49a" stroke-width="8.4" stroke-linecap="square" opacity="1"></line></svg></div></div></div><aside class="sidebar"><div class="sidebar-header"><h1>The Bronze Bell</h1><p class="invite"><span class="status-dot "></span>Invite Z94X77U5 · GM</p><div class="row" style="margin-top: 8px;"><a class="btn small ghost" href="/" data-discover="true">Lobby</a></div></div><div class="sidebar-scroll"><section class="section"><h2>People</h2><div class="member"><span>GM Gale</span><span class="role-pill">gm</span></div><div class="member"><span>Player Priya</span><span class="role-pill">player</span></div></section><section class="section"><h2>Characters</h2><button class="btn small" type="button">New character</button></section><section class="section"><h2>Dice</h2><form class="dice-form"><input value="d20" style=""><button class="btn primary small" type="submit">Roll</button></form><div></div></section></div></aside></div></div>
+    <script type="module" src="/src/main.tsx?t=1789524449444"></script>
   
 
 </body></html>

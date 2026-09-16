@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { DiceRollResult } from "./dice.ts";
+import type { CellPatch, EdgePatch } from "./drawing.ts";
 
 export type MemberRole = "gm" | "player";
 
@@ -18,6 +19,8 @@ export type MapState = {
   snap: boolean;
   offsetX: number;
   offsetY: number;
+  fills: Record<string, string>;
+  edges: Record<string, string>;
 };
 
 export type CharacterState = {
@@ -68,6 +71,22 @@ export type TableSnapshot = {
   members: PresenceMember[];
 };
 
+const paintColorSchema = z.string().regex(/^#[0-9a-fA-F]{6}$/);
+const cellCoordSchema = z.number().int().min(-5000).max(5000);
+
+export const cellPatchSchema = z.object({
+  x: cellCoordSchema,
+  y: cellCoordSchema,
+  color: paintColorSchema.nullable(),
+});
+
+export const edgePatchSchema = z.object({
+  x: cellCoordSchema,
+  y: cellCoordSchema,
+  dir: z.enum(["h", "v"]),
+  color: paintColorSchema.nullable(),
+});
+
 export const clientActionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("join_table"), tableId: z.string().min(1) }),
   z.object({
@@ -115,6 +134,16 @@ export const clientActionSchema = z.discriminatedUnion("type", [
       offsetY: z.number().optional(),
     }),
   }),
+  z.object({
+    type: z.literal("paint_cells"),
+    cells: z.array(cellPatchSchema).min(1).max(8000),
+    persist: z.boolean().optional(),
+  }),
+  z.object({
+    type: z.literal("paint_edges"),
+    edges: z.array(edgePatchSchema).min(1).max(8000),
+    persist: z.boolean().optional(),
+  }),
   z.object({ type: z.literal("roll_dice"), expression: z.string().min(1) }),
   z.object({
     type: z.literal("upsert_character"),
@@ -136,5 +165,7 @@ export type ServerEvent =
   | { type: "token_updated"; token: TokenState }
   | { type: "dice_rolled"; roll: DiceLogEntry }
   | { type: "map_updated"; map: MapState }
+  | { type: "cells_painted"; cells: CellPatch[] }
+  | { type: "edges_painted"; edges: EdgePatch[] }
   | { type: "presence"; members: PresenceMember[] }
   | { type: "error"; message: string };

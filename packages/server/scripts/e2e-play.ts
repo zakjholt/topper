@@ -154,12 +154,43 @@ player.ws.send(
 );
 await gm.waitFor("character_patched", mark);
 
+mark = player.events.length;
+gm.ws.send(
+  JSON.stringify({
+    type: "paint_cells",
+    cells: [{ x: 2, y: 3, color: "#c4b49a" }],
+    persist: true,
+  }),
+);
+await player.waitFor("cells_painted", mark);
+
+mark = gm.events.length;
+gm.ws.send(
+  JSON.stringify({
+    type: "paint_edges",
+    edges: [{ x: 2, y: 3, dir: "h", color: "#2a2116" }],
+    persist: true,
+  }),
+);
+await gm.waitFor("edges_painted", mark);
+
+mark = player.events.length;
+player.ws.send(
+  JSON.stringify({
+    type: "paint_cells",
+    cells: [{ x: 0, y: 0, color: "#a33a32" }],
+    persist: true,
+  }),
+);
+await player.waitFor("error", mark);
+
 gm.ws.close();
 const gmAgain = await connect(gmCookie, table.id);
 const snap = (await gmAgain.waitFor("table_snapshot")).snapshot as {
   characters: { id: string; data: { name?: string; hp?: { current: number } } }[];
   tokens: { x: number }[];
   diceLog: unknown[];
+  map: { fills: Record<string, string>; edges: Record<string, string> };
 };
 
 const branwen = snap.characters.find((ch) => ch.data.name === "Branwen");
@@ -169,6 +200,9 @@ if (branwen.data.hp?.current !== 4) throw new Error("GM HP patch not persisted")
 if (priyaSheet?.data.hp?.current !== 7) throw new Error("Player HP patch not persisted");
 if (!snap.tokens.some((t) => t.x === 280)) throw new Error("Token position not persisted");
 if (snap.diceLog.length < 1) throw new Error("Dice log not persisted");
+if (snap.map.fills["2,3"] !== "#c4b49a") throw new Error("Cell fill not persisted");
+if (snap.map.edges["2,3,h"] !== "#2a2116") throw new Error("Edge paint not persisted");
+if (snap.map.fills["0,0"]) throw new Error("Player was able to paint the map");
 
 gmAgain.ws.close();
 player.ws.close();

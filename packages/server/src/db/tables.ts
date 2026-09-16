@@ -1,7 +1,9 @@
 import { and, desc, eq } from "drizzle-orm";
 import type {
+  CellPatch,
   CharacterState,
   DiceLogEntry,
+  EdgePatch,
   MapState,
   MemberRole,
   PresenceMember,
@@ -9,6 +11,7 @@ import type {
   TableSnapshot,
   TokenState,
 } from "@topper/shared";
+import { asColorMap, mergeEdges, mergeFills } from "@topper/shared";
 import { createEmptyDocument, getSheetSchema } from "@topper/shared";
 import { db } from "./index.ts";
 import {
@@ -153,6 +156,8 @@ function asMap(row: typeof maps.$inferSelect): MapState {
     snap: row.snap,
     offsetX: row.offsetX,
     offsetY: row.offsetY,
+    fills: asColorMap(row.fills),
+    edges: asColorMap(row.edges),
   };
 }
 
@@ -310,9 +315,27 @@ export async function deleteToken(tokenId: string) {
 
 export async function updateMap(
   tableId: string,
-  patch: Partial<Omit<MapState, "tableId">>,
+  patch: Partial<Omit<MapState, "tableId" | "fills" | "edges">>,
 ): Promise<MapState> {
   const [row] = await db.update(maps).set(patch).where(eq(maps.tableId, tableId)).returning();
+  if (!row) throw new Error("Map not found");
+  return asMap(row);
+}
+
+export async function paintMapCells(tableId: string, cells: CellPatch[]): Promise<MapState> {
+  const [current] = await db.select().from(maps).where(eq(maps.tableId, tableId)).limit(1);
+  if (!current) throw new Error("Map not found");
+  const fills = mergeFills(asColorMap(current.fills), cells);
+  const [row] = await db.update(maps).set({ fills }).where(eq(maps.tableId, tableId)).returning();
+  if (!row) throw new Error("Map not found");
+  return asMap(row);
+}
+
+export async function paintMapEdges(tableId: string, edges: EdgePatch[]): Promise<MapState> {
+  const [current] = await db.select().from(maps).where(eq(maps.tableId, tableId)).limit(1);
+  if (!current) throw new Error("Map not found");
+  const nextEdges = mergeEdges(asColorMap(current.edges), edges);
+  const [row] = await db.update(maps).set({ edges: nextEdges }).where(eq(maps.tableId, tableId)).returning();
   if (!row) throw new Error("Map not found");
   return asMap(row);
 }

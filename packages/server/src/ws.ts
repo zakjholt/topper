@@ -19,6 +19,8 @@ import {
   listMembers,
   loadSnapshot,
   moveToken,
+  paintMapCells,
+  paintMapEdges,
   patchCharacterData,
   placeToken,
   updateMap,
@@ -169,6 +171,22 @@ async function handleAction(peer: Peer, action: ClientAction) {
       if (peer.role !== "gm") throw new Error("Only the GM can update the map");
       const map = await updateMap(peer.tableId, action.patch);
       broadcast(peer.tableId, { type: "map_updated", map });
+      return;
+    }
+    case "paint_cells": {
+      if (peer.role !== "gm") throw new Error("Only the GM can paint the map");
+      if (action.persist !== false) {
+        await paintMapCells(peer.tableId, action.cells);
+      }
+      broadcast(peer.tableId, { type: "cells_painted", cells: action.cells });
+      return;
+    }
+    case "paint_edges": {
+      if (peer.role !== "gm") throw new Error("Only the GM can paint the map");
+      if (action.persist !== false) {
+        await paintMapEdges(peer.tableId, action.edges);
+      }
+      broadcast(peer.tableId, { type: "edges_painted", edges: action.edges });
       return;
     }
     case "roll_dice": {

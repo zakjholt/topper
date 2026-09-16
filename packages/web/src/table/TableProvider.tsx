@@ -9,8 +9,9 @@ import {
   type ReactNode,
 } from "react";
 import type { ClientAction, ServerEvent, TableSnapshot } from "@topper/shared";
+import { mergeEdges, mergeFills } from "@topper/shared";
 
-export type Tool = "select" | "token";
+export type Tool = "select" | "token" | "fill" | "edge";
 
 type TableContextValue = {
   snapshot: TableSnapshot | null;
@@ -68,6 +69,16 @@ function applyEvent(snapshot: TableSnapshot, event: ServerEvent): TableSnapshot 
       return { ...snapshot, diceLog: [...snapshot.diceLog, event.roll].slice(-50) };
     case "map_updated":
       return { ...snapshot, map: event.map };
+    case "cells_painted":
+      return {
+        ...snapshot,
+        map: { ...snapshot.map, fills: mergeFills(snapshot.map.fills ?? {}, event.cells) },
+      };
+    case "edges_painted":
+      return {
+        ...snapshot,
+        map: { ...snapshot.map, edges: mergeEdges(snapshot.map.edges ?? {}, event.edges) },
+      };
     case "presence":
       return { ...snapshot, members: event.members };
     case "error":

@@ -12,7 +12,7 @@ export {
 } from "./sheets/document.ts";
 export { parseDiceExpression, rollDice } from "./dice.ts";
 export type { DiceRollResult } from "./dice.ts";
-export { clientActionSchema } from "./protocol.ts";
+export { cellPatchSchema, clientActionSchema, edgePatchSchema } from "./protocol.ts";
 export type {
   CharacterState,
   ClientAction,
@@ -25,3 +25,18 @@ export type {
   TableSnapshot,
   TokenState,
 } from "./protocol.ts";
+export {
+  asColorMap,
+  cellBoundsForMap,
+  cellInBounds,
+  cellKey,
+  edgeKey,
+  floodFill,
+  mergeEdges,
+  mergeFills,
+  parseCellKey,
+  parseEdgeKey,
+  rectCells,
+  rectEdges,
+} from "./drawing.ts";
+export type { CellBounds, CellPatch, EdgeDir, EdgePatch } from "./drawing.ts";

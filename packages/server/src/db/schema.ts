@@ -94,6 +94,8 @@ export const maps = pgTable("maps", {
   snap: boolean("snap").notNull().default(true),
   offsetX: integer("offset_x").notNull().default(0),
   offsetY: integer("offset_y").notNull().default(0),
+  fills: jsonb("fills").$type<Record<string, string>>().notNull().default({}),
+  edges: jsonb("edges").$type<Record<string, string>>().notNull().default({}),
 });
 
 export const characters = pgTable("characters", {
