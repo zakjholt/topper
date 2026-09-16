@@ -10,19 +10,8 @@ import {
 } from "react";
 import type { Tool } from "../table/TableProvider.tsx";
 import { useTable } from "../table/TableProvider.tsx";
-
-const PALETTE = [
-  "#e8dcc4",
-  "#c4b49a",
-  "#6b6358",
-  "#5c4033",
-  "#8b5a2b",
-  "#3a5a7a",
-  "#4f8a62",
-  "#3d4f3a",
-  "#a33a32",
-  "#2a2116",
-];
+import { PaletteEditor } from "./PaletteEditor.tsx";
+import { nextPaletteColor, usePaintPalette } from "./palette.ts";
 
 const TOOLS: Array<{
   id: Tool;
@@ -180,6 +169,17 @@ function IconPlace() {
   );
 }
 
+function IconPalette() {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true">
+      <rect x="3.2" y="3.2" width="6" height="6" rx="1.4" fill="currentColor" />
+      <rect x="10.8" y="3.2" width="6" height="6" rx="1.4" fill="none" stroke="currentColor" strokeWidth="1.4" />
+      <rect x="3.2" y="10.8" width="6" height="6" rx="1.4" fill="none" stroke="currentColor" strokeWidth="1.4" />
+      <rect x="10.8" y="10.8" width="6" height="6" rx="1.4" fill="currentColor" />
+    </svg>
+  );
+}
+
 type ToolbarPlacement =
   | "top-left"
   | "top"
@@ -271,14 +271,6 @@ const ICONS: Record<Tool, () => ReactNode> = {
   token: IconToken,
 };
 
-function nextPaletteColor(current: string | null, direction: 1 | -1): string {
-  const first = PALETTE[0] ?? "#c4b49a";
-  const last = PALETTE[PALETTE.length - 1] ?? first;
-  const index = PALETTE.indexOf(current ?? "");
-  if (index < 0) return direction === 1 ? first : last;
-  return PALETTE[(index + direction + PALETTE.length) % PALETTE.length] ?? first;
-}
-
 function isTypingTarget(target: EventTarget | null) {
   const el = target as HTMLElement | null;
   if (!el) return false;
@@ -307,6 +299,7 @@ export function Toolbar({
   const drawing = Boolean(isGm && (tool === "fill" || tool === "edge"));
   const tools = useMemo(() => TOOLS.filter((item) => !item.gmOnly || isGm), [isGm]);
   const activeTool = tools.find((item) => item.id === tool) ?? tools[0];
+  const { colors, presetId, applyPreset, setColorAt, addColor, removeColorAt } = usePaintPalette();
 
   const dockRef = useRef<HTMLDivElement>(null);
   const clusterRef = useRef<HTMLDivElement>(null);
@@ -327,6 +320,7 @@ export function Toolbar({
   const [dragPoint, setDragPoint] = useState<{ x: number; y: number } | null>(null);
   const [snapPreview, setSnapPreview] = useState<ToolbarPlacement | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const [idleHidden, setIdleHidden] = useState(false);
   const [nudge, setNudge] = useState(0);
   const [flash, setFlash] = useState<Tool | null>(null);
@@ -341,6 +335,7 @@ export function Toolbar({
     settingsOpen ||
     placementOpen ||
     helpOpen ||
+    paletteOpen ||
     dragging ||
     (!mapBusy && (nearEdge || !idleHidden));
   const receded = !stayOpen;
@@ -391,6 +386,30 @@ export function Toolbar({
   }, [placement]);
 
   useEffect(() => {
+    if (paintColor === null) return;
+    const hex = paintColor.toLowerCase();
+    if (colors.includes(hex)) {
+      if (paintColor !== hex) setPaintColor(hex);
+      return;
+    }
+    setPaintColor(colors[0] ?? null);
+  }, [colors, paintColor, setPaintColor]);
+
+  function openPaletteEditor() {
+    setPlacementOpen(false);
+    setSettingsOpen(false);
+    setHelpOpen(false);
+    setPaletteOpen(true);
+    ping();
+  }
+
+  function handleSetColor(index: number, color: string) {
+    const previous = colors[index];
+    setColorAt(index, color);
+    if (previous && paintColor?.toLowerCase() === previous) setPaintColor(color.toLowerCase());
+  }
+
+  useEffect(() => {
     function onMove(e: PointerEvent) {
       const stage = dockRef.current?.closest(".map-stage");
       if (!stage) return;
@@ -416,6 +435,7 @@ export function Toolbar({
       settingsOpen ||
       placementOpen ||
       helpOpen ||
+      paletteOpen ||
       nearEdge ||
       dragging ||
       mapBusy
@@ -433,6 +453,7 @@ export function Toolbar({
     settingsOpen,
     placementOpen,
     helpOpen,
+    paletteOpen,
     nearEdge,
     dragging,
     mapBusy,
@@ -459,6 +480,10 @@ export function Toolbar({
           setHelpOpen(false);
           return;
         }
+        if (paletteOpen) {
+          setPaletteOpen(false);
+          return;
+        }
         if (placementOpen) {
           setPlacementOpen(false);
           return;
@@ -473,13 +498,14 @@ export function Toolbar({
       if (e.key === "?" || (e.key === "/" && e.shiftKey)) {
         e.preventDefault();
         setHelpOpen((open) => !open);
+        setPaletteOpen(false);
         setNudge((n) => n + 1);
         return;
       }
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       if (e.key === "Tab" && drawing) {
         e.preventDefault();
-        const next = nextPaletteColor(paintColor, e.shiftKey ? -1 : 1);
+        const next = nextPaletteColor(colors, paintColor, e.shiftKey ? -1 : 1);
         setPaintColor(next);
         ping();
         setColorFlash(next);
@@ -496,7 +522,7 @@ export function Toolbar({
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [chooseTool, drawing, helpOpen, paintColor, ping, placementOpen, setPaintColor, settingsOpen, tool, tools]);
+  }, [chooseTool, colors, drawing, helpOpen, paintColor, paletteOpen, ping, placementOpen, setPaintColor, settingsOpen, tool, tools]);
 
   const syncThumb = useCallback(() => {
     const cluster = clusterRef.current;
@@ -588,6 +614,7 @@ export function Toolbar({
     setDragging(true);
     setPlacementOpen(false);
     setSettingsOpen(false);
+    setPaletteOpen(false);
     updateDragFromPointer(e.clientX, e.clientY);
   }
 
@@ -703,6 +730,7 @@ export function Toolbar({
                 aria-expanded={placementOpen}
                 aria-label="Toolbar position"
                 onClick={() => {
+                  setPaletteOpen(false);
                   setSettingsOpen(false);
                   setPlacementOpen((open) => !open);
                 }}
@@ -738,6 +766,7 @@ export function Toolbar({
                   aria-label="Map settings"
                   onClick={() => {
                     setPlacementOpen(false);
+                    setPaletteOpen(false);
                     setSettingsOpen((open) => !open);
                   }}
                 >
@@ -779,6 +808,18 @@ export function Toolbar({
                         }
                       />
                     </label>
+                    <button
+                      type="button"
+                      className="toolbar-setting toolbar-setting-btn"
+                      onClick={() => openPaletteEditor()}
+                    >
+                      <span>Paint colors</span>
+                      <span className="toolbar-palette-mini" aria-hidden="true">
+                        {colors.slice(0, 6).map((color) => (
+                          <i key={color} style={{ background: color }} />
+                        ))}
+                      </span>
+                    </button>
                   </div>
                 ) : null}
               </div>
@@ -788,7 +829,10 @@ export function Toolbar({
               className={`tool-icon ${helpOpen ? "is-active" : ""}`}
               aria-expanded={helpOpen}
               aria-label="Keyboard shortcuts"
-              onClick={() => setHelpOpen((open) => !open)}
+              onClick={() => {
+                setPaletteOpen(false);
+                setHelpOpen((open) => !open);
+              }}
             >
               <IconHelp />
               <span className="tool-tip">
@@ -807,7 +851,7 @@ export function Toolbar({
                 title="Erase"
                 onClick={() => setPaintColor(null)}
               />
-              {PALETTE.map((color) => (
+              {colors.map((color) => (
                 <button
                   key={color}
                   type="button"
@@ -818,13 +862,22 @@ export function Toolbar({
                   onClick={() => setPaintColor(color)}
                 />
               ))}
-              <label className="swatch custom" title="Custom color">
-                <input
-                  type="color"
-                  value={paintColor ?? "#c4b49a"}
-                  onChange={(evt) => setPaintColor(evt.target.value)}
-                />
-              </label>
+              <button
+                type="button"
+                className={`swatch edit ${paletteOpen ? "active" : ""}`}
+                aria-label="Edit colors"
+                aria-expanded={paletteOpen}
+                title="Edit colors"
+                onClick={() => {
+                  if (paletteOpen) {
+                    setPaletteOpen(false);
+                    return;
+                  }
+                  openPaletteEditor();
+                }}
+              >
+                <IconPalette />
+              </button>
             </div>
             <p className="toolbar-hint">{activeTool?.hint} · Ctrl-drag pans</p>
           </div>
@@ -844,6 +897,20 @@ export function Toolbar({
           <span>{toast.label}</span>
           <kbd>{toast.shortcut}</kbd>
         </div>
+      ) : null}
+      {paletteOpen ? (
+        <PaletteEditor
+          colors={colors}
+          presetId={presetId}
+          onSelectPreset={applyPreset}
+          onSetColor={handleSetColor}
+          onAddColor={(color) => {
+            addColor(color);
+            setPaintColor(color.toLowerCase());
+          }}
+          onRemoveColor={removeColorAt}
+          onClose={() => setPaletteOpen(false)}
+        />
       ) : null}
       {helpOpen ? (
         <div className="toolbar-cheatsheet" role="dialog" aria-label="Keyboard shortcuts">

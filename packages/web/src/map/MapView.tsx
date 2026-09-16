@@ -18,6 +18,7 @@ import { uploadFile } from "../api.ts";
 import { EdgeLayer, FillLayer, GridLayer } from "./DrawingLayer.tsx";
 import { closerEdgeVertex, nearestEdge, nearestVertex, worldToCell } from "./grid.ts";
 import { Toolbar } from "./Toolbar.tsx";
+import { defaultPaintColor } from "./palette.ts";
 
 const ZOOM_MIN = 0.25;
 const ZOOM_MAX = 2.4;
@@ -91,7 +92,7 @@ export function MapView() {
   const zoomRef = useRef(zoom);
   panRef.current = pan;
   zoomRef.current = zoom;
-  const [paintColor, setPaintColor] = useState<string | null>("#c4b49a");
+  const [paintColor, setPaintColor] = useState<string | null>(defaultPaintColor);
   const [preview, setPreview] = useState<{
     kind: "fill" | "edge";
     shape: "rect" | "line";
