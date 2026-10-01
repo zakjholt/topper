@@ -207,17 +207,19 @@ export function GridLayer({
   gridSize,
   offsetX,
   offsetY,
+  aligning = false,
 }: {
   width: number;
   height: number;
   gridSize: number;
   offsetX: number;
   offsetY: number;
+  aligning?: boolean;
 }) {
   const vertical = gridLinePositions(width, gridSize, offsetX);
   const horizontal = gridLinePositions(height, gridSize, offsetY);
   return (
-    <svg className="map-drawing grid" {...drawingSvgProps(width, height)}>
+    <svg className={`map-drawing grid ${aligning ? "is-aligning" : ""}`} {...drawingSvgProps(width, height)}>
       {vertical.map((x) => (
         <line key={`v${x}`} className="map-grid-line" x1={x} y1={0} x2={x} y2={height} />
       ))}

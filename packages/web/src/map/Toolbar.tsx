@@ -10,6 +10,7 @@ import {
 } from "react";
 import type { Tool } from "../table/TableProvider.tsx";
 import { useTable } from "../table/TableProvider.tsx";
+import { GRID_SIZE_MAX, GRID_SIZE_MIN } from "./align.ts";
 import { PaletteEditor } from "./PaletteEditor.tsx";
 import { nextPaletteColor, usePaintPalette } from "./palette.ts";
 
@@ -286,12 +287,20 @@ export function Toolbar({
   paintColor,
   setPaintColor,
   mapBusy,
+  aligning = false,
+  hasMapImage = false,
   onUploadMap,
+  onStartAlign,
+  onStopAlign,
 }: {
   paintColor: string | null;
   setPaintColor: (color: string | null) => void;
   mapBusy: boolean;
+  aligning?: boolean;
+  hasMapImage?: boolean;
   onUploadMap: (file: File | undefined) => void;
+  onStartAlign?: () => void;
+  onStopAlign?: () => void;
 }) {
   const { snapshot, send, tool, setTool } = useTable();
   const isGm = snapshot?.table.role === "gm";
@@ -776,11 +785,11 @@ export function Toolbar({
                 {settingsOpen ? (
                   <div className="toolbar-popover">
                     <label className="toolbar-setting toolbar-setting-btn">
-                      <span>Map image</span>
-                      <span className="toolbar-file">Choose</span>
+                      <span>Background</span>
+                      <span className="toolbar-file">{hasMapImage ? "Replace" : "Optional"}</span>
                       <input
                         type="file"
-                        accept="image/*"
+                        accept="image/png,image/jpeg,image/webp,image/gif"
                         hidden
                         onChange={(evt) => {
                           void onUploadMap(evt.target.files?.[0]);
@@ -788,6 +797,18 @@ export function Toolbar({
                         }}
                       />
                     </label>
+                    <button
+                      type="button"
+                      className={`toolbar-setting toolbar-setting-btn ${aligning ? "is-aligning" : ""}`}
+                      onClick={() => {
+                        if (aligning) onStopAlign?.();
+                        else onStartAlign?.();
+                        setSettingsOpen(false);
+                      }}
+                    >
+                      <span>{aligning ? "Done aligning" : "Align grid"}</span>
+                      <span className="toolbar-file">{aligning ? "Esc" : "Drag"}</span>
+                    </button>
                     <button
                       type="button"
                       className="toolbar-setting toolbar-setting-btn"
@@ -800,8 +821,8 @@ export function Toolbar({
                       <span>Grid size</span>
                       <input
                         type="number"
-                        min={20}
-                        max={200}
+                        min={GRID_SIZE_MIN}
+                        max={GRID_SIZE_MAX}
                         value={map.gridSize}
                         onChange={(evt) =>
                           send({ type: "update_map", patch: { gridSize: Number(evt.target.value) || 70 } })

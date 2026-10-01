@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from "react";
 import {
   cellBoundsForMap,
   cellInBounds,
@@ -15,6 +15,15 @@ import {
 } from "@topper/shared";
 import { useTable } from "../table/TableProvider.tsx";
 import { uploadFile } from "../api.ts";
+import { AlignHud, MapDropOverlay } from "./AlignHud.tsx";
+import {
+  alignFromRect,
+  clampGridSize,
+  clampOffset,
+  fitMapInViewport,
+  imageFromDrop,
+  isFileDrag,
+} from "./align.ts";
 import { EdgeLayer, FillLayer, GridLayer } from "./DrawingLayer.tsx";
 import { closerEdgeVertex, nearestEdge, nearestVertex, worldToCell } from "./grid.ts";
 import { Toolbar } from "./Toolbar.tsx";
@@ -74,7 +83,40 @@ type PaintDrag = {
   edges: EdgePatch[];
 };
 
-type Drag = PanDrag | TokenDrag | PaintDrag;
+type AlignDrag = {
+  kind: "align";
+  mode: "square" | "nudge";
+  startX: number;
+  startY: number;
+  originX: number;
+  originY: number;
+  offsetX: number;
+  offsetY: number;
+  gridSize: number;
+  moved: boolean;
+};
+
+type Drag = PanDrag | TokenDrag | PaintDrag | AlignDrag;
+
+function isTypingTarget(target: EventTarget | null) {
+  const el = target as HTMLElement | null;
+  if (!el) return false;
+  return (
+    el.tagName === "INPUT" ||
+    el.tagName === "TEXTAREA" ||
+    el.tagName === "SELECT" ||
+    el.isContentEditable
+  );
+}
+
+function readImageSize(url: string) {
+  return new Promise<{ width: number; height: number }>((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+    img.onerror = () => reject(new Error("Could not read map image"));
+    img.src = url;
+  });
+}
 
 export function MapView() {
   const {
@@ -103,8 +145,23 @@ export function MapView() {
     edges?: EdgePatch[];
   } | null>(null);
   const drag = useRef<Drag | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const dropDepth = useRef(0);
+  const alignOffsetRef = useRef({ x: 0, y: 0 });
   const [panHeld, setPanHeld] = useState(false);
   const [mapBusy, setMapBusy] = useState(false);
+  const [aligning, setAligning] = useState(false);
+  const [alignDraft, setAlignDraft] = useState<{
+    gridSize: number;
+    offsetX: number;
+    offsetY: number;
+  } | null>(null);
+  const [alignSquare, setAlignSquare] = useState<{ x: number; y: number; width: number; height: number } | null>(
+    null,
+  );
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [fileHover, setFileHover] = useState(false);
 
   const tokens = snapshot?.tokens ?? [];
   const isGm = snapshot?.table.role === "gm";
@@ -125,6 +182,12 @@ export function MapView() {
     zoomRef.current = nextZoom;
     setPan(nextPan);
     setZoom(nextZoom);
+    drag.current = null;
+    setAligning(false);
+    setAlignDraft(null);
+    setAlignSquare(null);
+    setUploadError(null);
+    setFileHover(false);
   }, [sceneId]);
 
   useEffect(() => {
@@ -153,6 +216,55 @@ export function MapView() {
     node.addEventListener("wheel", prevent, { passive: false });
     return () => node.removeEventListener("wheel", prevent);
   }, [snapshot]);
+
+  function stopAlign() {
+    drag.current = null;
+    setMapBusy(false);
+    setAligning(false);
+    setAlignDraft(null);
+    setAlignSquare(null);
+  }
+
+  useEffect(() => {
+    if (!snapshot?.map) return;
+    alignOffsetRef.current = { x: snapshot.map.offsetX, y: snapshot.map.offsetY };
+  }, [snapshot?.map?.offsetX, snapshot?.map?.offsetY]);
+
+  useEffect(() => {
+    if (!aligning) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        if (isTypingTarget(e.target)) {
+          (e.target as HTMLElement).blur();
+          return;
+        }
+        stopAlign();
+        return;
+      }
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight" && e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+      const alignField = (e.target as HTMLElement | null)?.closest?.(".map-align-field");
+      // Keep native up/down steppers in the HUD inputs; left/right still nudge the grid.
+      if (isTypingTarget(e.target) && (!alignField || e.key === "ArrowUp" || e.key === "ArrowDown")) return;
+      e.preventDefault();
+      const step = e.shiftKey ? 10 : 1;
+      const dx = e.key === "ArrowLeft" ? -step : e.key === "ArrowRight" ? step : 0;
+      const dy = e.key === "ArrowUp" ? -step : e.key === "ArrowDown" ? step : 0;
+      const next = {
+        x: alignOffsetRef.current.x + dx,
+        y: alignOffsetRef.current.y + dy,
+      };
+      alignOffsetRef.current = next;
+      send({
+        type: "update_map",
+        patch: {
+          ...(dx !== 0 ? { offsetX: next.x } : {}),
+          ...(dy !== 0 ? { offsetY: next.y } : {}),
+        },
+      });
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [aligning, send]);
 
   const map = snapshot?.map;
   const bounds = useMemo(() => {
@@ -358,6 +470,25 @@ export function MapView() {
     if (e.button !== 0 && e.button !== 2) return;
     if (e.button === 2) e.preventDefault();
 
+    if (aligning && e.button === 0) {
+      const world = worldFromClient(e.clientX, e.clientY);
+      drag.current = {
+        kind: "align",
+        mode: e.altKey ? "nudge" : "square",
+        startX: world.x,
+        startY: world.y,
+        originX: world.x,
+        originY: world.y,
+        offsetX: mapState.offsetX,
+        offsetY: mapState.offsetY,
+        gridSize: mapState.gridSize,
+        moved: false,
+      };
+      setMapBusy(true);
+      e.currentTarget.setPointerCapture(e.pointerId);
+      return;
+    }
+
     if (tool === "token" && e.button === 0) {
       const world = worldFromClient(e.clientX, e.clientY);
       const x = snapToGrid(world.x - mapState.gridSize / 2, mapState.gridSize, mapState.offsetX, mapState.snap);
@@ -426,6 +557,29 @@ export function MapView() {
       send({ type: "move_token", tokenId: current.id, x, y, persist: false });
       return;
     }
+    if (current.kind === "align") {
+      const world = worldFromClient(e.clientX, e.clientY);
+      if (Math.hypot(world.x - current.startX, world.y - current.startY) > 4) current.moved = true;
+      if (current.mode === "nudge") {
+        const next = {
+          gridSize: current.gridSize,
+          offsetX: clampOffset(current.offsetX + (world.x - current.startX)),
+          offsetY: clampOffset(current.offsetY + (world.y - current.startY)),
+        };
+        setAlignDraft(next);
+        setAlignSquare(null);
+        return;
+      }
+      const left = Math.min(current.startX, world.x);
+      const top = Math.min(current.startY, world.y);
+      const width = Math.abs(world.x - current.startX);
+      const height = Math.abs(world.y - current.startY);
+      setAlignSquare({ x: left, y: top, width, height });
+      if (current.moved && (width > 8 || height > 8)) {
+        setAlignDraft(alignFromRect(current.startX, current.startY, world.x, world.y));
+      }
+      return;
+    }
     paintAtPointer(current, e.clientX, e.clientY);
   }
 
@@ -450,12 +604,36 @@ export function MapView() {
       if (!current.moved) setSelectedTokenId(null);
       return;
     }
+    if (current.kind === "align") {
+      const world = worldFromClient(e.clientX, e.clientY);
+      if (current.mode === "nudge" && current.moved) {
+        send({
+          type: "update_map",
+          patch: {
+            offsetX: clampOffset(current.offsetX + (world.x - current.startX)),
+            offsetY: clampOffset(current.offsetY + (world.y - current.startY)),
+          },
+        });
+      } else if (current.mode === "square" && current.moved) {
+        const width = Math.abs(world.x - current.startX);
+        const height = Math.abs(world.y - current.startY);
+        if (width > 8 || height > 8) {
+          send({
+            type: "update_map",
+            patch: alignFromRect(current.startX, current.startY, world.x, world.y),
+          });
+        }
+      }
+      setAlignDraft(null);
+      setAlignSquare(null);
+      return;
+    }
     finishPaint(current);
   }
 
   function onTokenPointerDown(e: ReactPointerEvent<HTMLButtonElement>, tokenId: string) {
     if (isPanGesture(e)) return;
-    if (tool === "token" || drawing) return;
+    if (aligning || tool === "token" || drawing) return;
     if (e.button !== 0) return;
     e.stopPropagation();
     const token = tokens.find((t) => t.id === tokenId);
@@ -474,36 +652,157 @@ export function MapView() {
     e.currentTarget.setPointerCapture(e.pointerId);
   }
 
+  function fitToViewport(width: number, height: number) {
+    const node = viewportRef.current;
+    if (!node) return;
+    const next = fitMapInViewport(width, height, node.clientWidth, node.clientHeight, ZOOM_MIN, ZOOM_MAX);
+    zoomRef.current = next.zoom;
+    panRef.current = next.pan;
+    setZoom(next.zoom);
+    setPan(next.pan);
+  }
+
   async function onUploadMap(file: File | undefined) {
     if (!file) return;
-    const url = await uploadFile(file);
-    const img = new Image();
-    img.onload = () => {
+    setUploadError(null);
+    setUploading(true);
+    setFileHover(false);
+    dropDepth.current = 0;
+    try {
+      const url = await uploadFile(file);
+      const size = await readImageSize(url);
       send({
         type: "update_map",
-        patch: { imageUrl: url, width: img.naturalWidth, height: img.naturalHeight },
+        patch: {
+          imageUrl: url,
+          width: size.width,
+          height: size.height,
+          offsetX: 0,
+          offsetY: 0,
+        },
       });
-    };
-    img.src = url;
+      fitToViewport(size.width, size.height);
+      setTool("select");
+      setAligning(true);
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : "Upload failed");
+    } finally {
+      setUploading(false);
+    }
   }
+
+  function onBoardDragEnter(e: ReactDragEvent<HTMLDivElement>) {
+    if (!isGm || !isFileDrag(e)) return;
+    e.preventDefault();
+    dropDepth.current += 1;
+    setFileHover(true);
+  }
+
+  function onBoardDragOver(e: ReactDragEvent<HTMLDivElement>) {
+    if (!isGm || !isFileDrag(e)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+  }
+
+  function onBoardDragLeave(e: ReactDragEvent<HTMLDivElement>) {
+    if (!isGm) return;
+    dropDepth.current = Math.max(0, dropDepth.current - 1);
+    if (dropDepth.current === 0) setFileHover(false);
+  }
+
+  function onBoardDrop(e: ReactDragEvent<HTMLDivElement>) {
+    if (!isGm) return;
+    e.preventDefault();
+    dropDepth.current = 0;
+    setFileHover(false);
+    void onUploadMap(imageFromDrop(e));
+  }
+
+  function patchAlign(patch: { gridSize?: number; offsetX?: number; offsetY?: number }) {
+    send({
+      type: "update_map",
+      patch: {
+        gridSize: patch.gridSize === undefined ? undefined : clampGridSize(patch.gridSize),
+        offsetX: patch.offsetX === undefined ? undefined : clampOffset(patch.offsetX),
+        offsetY: patch.offsetY === undefined ? undefined : clampOffset(patch.offsetY),
+      },
+    });
+  }
+
+  const grid = alignDraft ?? {
+    gridSize: mapState.gridSize,
+    offsetX: mapState.offsetX,
+    offsetY: mapState.offsetY,
+  };
 
   const viewportClass = [
     "map-viewport",
-    tool === "token" || drawing ? "placing" : "",
+    aligning || tool === "token" || drawing ? "placing" : "",
     panOverride ? "panning" : "",
+    aligning ? "aligning" : "",
   ]
     .filter(Boolean)
     .join(" ");
 
   return (
     <div className="map-stage">
-      <div className="map-board">
+      <div
+        className={`map-board ${fileHover ? "is-drop" : ""} ${aligning ? "is-aligning" : ""}`}
+        onDragEnter={onBoardDragEnter}
+        onDragOver={onBoardDragOver}
+        onDragLeave={onBoardDragLeave}
+        onDrop={onBoardDrop}
+      >
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/png,image/jpeg,image/webp,image/gif"
+          hidden
+          onChange={(evt) => {
+            void onUploadMap(evt.target.files?.[0]);
+            evt.target.value = "";
+          }}
+        />
         <Toolbar
           paintColor={paintColor}
           setPaintColor={setPaintColor}
           mapBusy={mapBusy}
+          aligning={aligning}
+          hasMapImage={Boolean(mapState.imageUrl)}
           onUploadMap={(file) => void onUploadMap(file)}
+          onStartAlign={() => {
+            setTool("select");
+            setAligning(true);
+          }}
+          onStopAlign={stopAlign}
         />
+        {isGm ? (
+          <MapDropOverlay
+            hasImage={Boolean(mapState.imageUrl)}
+            hovering={fileHover}
+            uploading={uploading}
+            error={uploadError}
+            onPick={() => fileInputRef.current?.click()}
+          />
+        ) : null}
+        {aligning && isGm ? (
+          <AlignHud
+            width={mapState.width}
+            height={mapState.height}
+            gridSize={grid.gridSize}
+            offsetX={grid.offsetX}
+            offsetY={grid.offsetY}
+            live={Boolean(alignDraft)}
+            hasImage={Boolean(mapState.imageUrl)}
+            error={uploadError}
+            onChange={patchAlign}
+            onDone={stopAlign}
+            onReplace={() => fileInputRef.current?.click()}
+          />
+        ) : null}
+        {uploadError && !aligning && !fileHover && !uploading ? (
+          <p className="map-upload-error">{uploadError}</p>
+        ) : null}
         <div
           ref={viewportRef}
           className={viewportClass}
@@ -537,26 +836,38 @@ export function MapView() {
             preview={previewFills}
             width={mapState.width}
             height={mapState.height}
-            gridSize={mapState.gridSize}
-            offsetX={mapState.offsetX}
-            offsetY={mapState.offsetY}
+            gridSize={grid.gridSize}
+            offsetX={grid.offsetX}
+            offsetY={grid.offsetY}
           />
           <GridLayer
             width={mapState.width}
             height={mapState.height}
-            gridSize={mapState.gridSize}
-            offsetX={mapState.offsetX}
-            offsetY={mapState.offsetY}
+            gridSize={grid.gridSize}
+            offsetX={grid.offsetX}
+            offsetY={grid.offsetY}
+            aligning={aligning}
           />
+          {alignSquare ? (
+            <svg className="map-drawing align-preview" width={mapState.width} height={mapState.height} viewBox={`0 0 ${mapState.width} ${mapState.height}`} preserveAspectRatio="none">
+              <rect
+                className="map-align-square"
+                x={alignSquare.x}
+                y={alignSquare.y}
+                width={Math.max(1, alignSquare.width)}
+                height={Math.max(1, alignSquare.height)}
+              />
+            </svg>
+          ) : null}
           <EdgeLayer
             edges={mapState.edges ?? {}}
             preview={previewEdges}
             linePreview={previewLine}
             width={mapState.width}
             height={mapState.height}
-            gridSize={mapState.gridSize}
-            offsetX={mapState.offsetX}
-            offsetY={mapState.offsetY}
+            gridSize={grid.gridSize}
+            offsetX={grid.offsetX}
+            offsetY={grid.offsetY}
           />
           {tokens.map((token) => {
             const character = snapshot.characters.find((ch) => ch.id === token.characterId);

@@ -9,5 +9,6 @@
     "types": ["vite/client"],
     "verbatimModuleSyntax": true
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": ["src/**/*.test.ts"]
 }

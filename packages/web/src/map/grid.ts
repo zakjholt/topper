@@ -104,6 +104,12 @@ export function gridLinePositions(mapLength: number, gridSize: number, offset: n
   let pos = offset % size;
   if (pos > 0) pos -= size;
   const positions: number[] = [];
-  for (; pos < mapLength + size; pos += size) positions.push(pos);
+  for (; pos <= mapLength; pos += size) {
+    if (pos >= 0) positions.push(pos);
+  }
+  // Close the frame on the map edge when the last cell is only a partial square.
+  if (positions.length === 0 || positions[positions.length - 1] !== mapLength) {
+    positions.push(mapLength);
+  }
   return positions;
 }
