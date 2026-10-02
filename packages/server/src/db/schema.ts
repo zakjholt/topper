@@ -139,7 +139,7 @@ export const tokens = pgTable(
     characterId: text("character_id").references(() => characters.id, { onDelete: "set null" }),
     x: doublePrecision("x").notNull(),
     y: doublePrecision("y").notNull(),
-    size: integer("size").notNull().default(70),
+    size: doublePrecision("size").notNull().default(70),
     label: text("label").notNull().default(""),
     imageUrl: text("image_url"),
   },

@@ -30,6 +30,7 @@ export function AlignHud({
   onChange,
   onDone,
   onReplace,
+  onClear,
 }: {
   width: number;
   height: number;
@@ -43,6 +44,7 @@ export function AlignHud({
   onChange: (patch: { gridSize?: number; offsetX?: number; offsetY?: number }) => void;
   onDone: () => void;
   onReplace: () => void;
+  onClear?: () => void;
 }) {
   const counts = gridCounts(width, height, gridSize, offsetX, offsetY, gridType);
   const cellName = isHexGrid(gridType) ? "hex" : "square";
@@ -88,6 +90,11 @@ export function AlignHud({
       <button type="button" className="map-align-replace" onClick={onReplace}>
         {hasImage ? "Replace background" : "Add background"}
       </button>
+      {hasImage && onClear ? (
+        <button type="button" className="map-align-clear" onClick={onClear}>
+          Remove background
+        </button>
+      ) : null}
       {error ? <p className="map-align-error">{error}</p> : null}
     </div>
   );

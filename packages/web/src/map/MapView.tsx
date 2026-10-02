@@ -737,6 +737,12 @@ export function MapView() {
     setPan(next.pan);
   }
 
+  function onClearMapImage() {
+    send({ type: "update_map", patch: { imageUrl: null } });
+    setUploadError(null);
+    stopAlign();
+  }
+
   async function onUploadMap(file: File | undefined) {
     if (!file) return;
     setUploadError(null);
@@ -845,6 +851,7 @@ export function MapView() {
           aligning={aligning}
           hasMapImage={Boolean(mapState.imageUrl)}
           onUploadMap={(file) => void onUploadMap(file)}
+          onClearImage={onClearMapImage}
           onStartAlign={() => {
             setTool("select");
             setAligning(true);
@@ -874,6 +881,7 @@ export function MapView() {
             onChange={patchAlign}
             onDone={stopAlign}
             onReplace={() => fileInputRef.current?.click()}
+            onClear={onClearMapImage}
           />
         ) : null}
         {uploadError && !aligning && !fileHover && !uploading ? (

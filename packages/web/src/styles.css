@@ -443,6 +443,22 @@ textarea {
   background: rgba(210, 177, 122, 0.14);
 }
 
+.map-align-clear {
+  appearance: none;
+  width: 100%;
+  margin: 0;
+  padding: 2px 4px 0;
+  border: 0;
+  background: transparent;
+  color: var(--danger);
+  font-size: 0.74rem;
+}
+
+.map-align-clear:hover,
+.map-align-clear:focus-visible {
+  text-decoration: underline;
+}
+
 .map-align-error,
 .map-upload-error {
   margin: 8px 0 0;
@@ -1170,12 +1186,19 @@ textarea {
   min-width: 0;
 }
 
-.toolbar-placement-label {
+.toolbar-placement-label,
+.toolbar-setting-label {
   margin: 0;
   color: var(--muted);
   font-size: 0.72rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+.toolbar-setting-rule {
+  height: 1px;
+  margin: 2px 0;
+  background: rgba(154, 122, 69, 0.28);
 }
 
 .toolbar-placement {
@@ -1303,6 +1326,23 @@ textarea {
   letter-spacing: 0.04em;
 }
 
+.toolbar-file.is-clear {
+  color: var(--danger);
+}
+
+.toolbar-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+  pointer-events: none;
+}
+
 .toolbar-setting input[type="number"] {
   width: 64px;
 }
@@ -1314,6 +1354,9 @@ textarea {
   padding: 0;
   width: 100%;
   cursor: pointer;
+  font: inherit;
+  text-align: inherit;
+  color: inherit;
 }
 
 .toolbar-palette-mini {
@@ -1732,15 +1775,40 @@ textarea {
   stroke-width: 1.25;
 }
 
-.toolbar-grid-type {
+.toolbar-grid-types {
+  display: flex;
+  gap: 4px;
+}
+
+.toolbar-grid-types button {
   appearance: none;
-  max-width: 110px;
-  padding: 4px 8px;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin: 0;
+  padding: 0;
   border: 1px solid var(--field-line);
   border-radius: 8px;
   background: var(--field);
-  color: var(--text);
-  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.toolbar-grid-types button svg {
+  width: 16px;
+  height: 16px;
+}
+
+.toolbar-grid-types button:hover,
+.toolbar-grid-types button:focus-visible {
+  color: var(--parchment);
+  border-color: var(--brass-dim);
+}
+
+.toolbar-grid-types button.is-active {
+  color: var(--ink);
+  background: linear-gradient(180deg, #c4a46a, #8d6b38);
+  border-color: #6a5436;
 }
 
 .map-drawing.align-preview {

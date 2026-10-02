@@ -10,17 +10,17 @@ import {
 } from "react";
 import type { Tool } from "../table/TableProvider.tsx";
 import { useTable } from "../table/TableProvider.tsx";
-import { GRID_TYPES, type GridType } from "@topper/shared";
+import type { GridType } from "@topper/shared";
 import { GRID_SIZE_MAX, GRID_SIZE_MIN, clampGridSize } from "./align.ts";
 import { NumberField } from "./NumberField.tsx";
 import { PaletteEditor } from "./PaletteEditor.tsx";
 import { nextPaletteColor, usePaintPalette } from "./palette.ts";
 
-const GRID_TYPE_LABELS: Record<GridType, string> = {
-  square: "Square",
-  hexFlat: "Hex flat",
-  hexPointy: "Hex pointy",
-};
+const GRID_TYPE_OPTIONS: Array<{ id: GridType; label: string }> = [
+  { id: "square", label: "Square grid" },
+  { id: "hexFlat", label: "Flat hex grid" },
+  { id: "hexPointy", label: "Pointy hex grid" },
+];
 
 const TOOLS: Array<{
   id: Tool;
@@ -130,6 +130,48 @@ function IconPin({ filled }: { filled: boolean }) {
       />
     </svg>
   );
+}
+
+function IconGridSquare() {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true">
+      <rect x="4" y="4" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
+  );
+}
+
+function IconGridFlat() {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true">
+      <polygon
+        points="17,10 13.5,16.1 6.5,16.1 3,10 6.5,3.9 13.5,3.9"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function IconGridPointy() {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true">
+      <polygon
+        points="10,3 16.1,6.5 16.1,13.5 10,17 3.9,13.5 3.9,6.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function GridTypeIcon({ type }: { type: GridType }) {
+  if (type === "hexFlat") return <IconGridFlat />;
+  if (type === "hexPointy") return <IconGridPointy />;
+  return <IconGridSquare />;
 }
 
 function IconMap() {
@@ -298,6 +340,7 @@ export function Toolbar({
   aligning = false,
   hasMapImage = false,
   onUploadMap,
+  onClearImage,
   onStartAlign,
   onStopAlign,
 }: {
@@ -307,6 +350,7 @@ export function Toolbar({
   aligning?: boolean;
   hasMapImage?: boolean;
   onUploadMap: (file: File | undefined) => void;
+  onClearImage?: () => void;
   onStartAlign?: () => void;
   onStopAlign?: () => void;
 }) {
@@ -322,6 +366,8 @@ export function Toolbar({
   const clusterRef = useRef<HTMLDivElement>(null);
   const thumbRef = useRef<HTMLSpanElement>(null);
   const settingsRef = useRef<HTMLDivElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const pickingImage = useRef(false);
   const placementRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ x: number; y: number; moved: boolean } | null>(null);
   const snapPreviewRef = useRef<ToolbarPlacement | null>(null);
@@ -480,6 +526,7 @@ export function Toolbar({
   useEffect(() => {
     if (!settingsOpen && !placementOpen) return;
     function onPointer(e: PointerEvent) {
+      if (pickingImage.current) return;
       const target = e.target as Node;
       if (settingsRef.current?.contains(target) || placementRef.current?.contains(target)) return;
       setSettingsOpen(false);
@@ -729,6 +776,130 @@ export function Toolbar({
               );
             })}
           </div>
+          {isGm ? (
+            <div className="toolbar-side">
+              <div ref={settingsRef} className="toolbar-popover-anchor">
+                <button
+                  type="button"
+                  className={`tool-icon ${settingsOpen ? "is-active" : ""}`}
+                  aria-expanded={settingsOpen}
+                  aria-label="Map settings"
+                  onClick={() => {
+                    setPlacementOpen(false);
+                    setPaletteOpen(false);
+                    setSettingsOpen((open) => !open);
+                  }}
+                >
+                  <IconMap />
+                  <span className="tool-tip">Map settings</span>
+                </button>
+                <input
+                  ref={imageInputRef}
+                  className="toolbar-file-input"
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/gif"
+                  tabIndex={-1}
+                  onChange={(evt) => {
+                    pickingImage.current = false;
+                    void onUploadMap(evt.target.files?.[0]);
+                    evt.target.value = "";
+                    setSettingsOpen(false);
+                  }}
+                  onCancel={() => {
+                    pickingImage.current = false;
+                  }}
+                />
+                {settingsOpen ? (
+                  <div className="toolbar-popover">
+                    <p className="toolbar-setting-label">Background</p>
+                    <button
+                      type="button"
+                      className="toolbar-setting toolbar-setting-btn"
+                      onClick={() => {
+                        pickingImage.current = true;
+                        imageInputRef.current?.click();
+                        window.setTimeout(() => {
+                          if (document.hasFocus()) pickingImage.current = false;
+                        }, 500);
+                      }}
+                    >
+                      <span>{hasMapImage ? "Replace image" : "Add image"}</span>
+                      <span className="toolbar-file">{hasMapImage ? "Replace" : "Optional"}</span>
+                    </button>
+                    {hasMapImage ? (
+                      <button
+                        type="button"
+                        className="toolbar-setting toolbar-setting-btn"
+                        onClick={() => {
+                          onClearImage?.();
+                          setSettingsOpen(false);
+                        }}
+                      >
+                        <span>Remove image</span>
+                        <span className="toolbar-file is-clear">Clear</span>
+                      </button>
+                    ) : null}
+                    {hasMapImage || aligning ? (
+                      <button
+                        type="button"
+                        className={`toolbar-setting toolbar-setting-btn ${aligning ? "is-aligning" : ""}`}
+                        onClick={() => {
+                          if (aligning) onStopAlign?.();
+                          else onStartAlign?.();
+                          setSettingsOpen(false);
+                        }}
+                      >
+                        <span>{aligning ? "Done aligning" : "Align grid"}</span>
+                        <span className="toolbar-file">{aligning ? "Esc" : "Drag"}</span>
+                      </button>
+                    ) : null}
+                    <div className="toolbar-setting-rule" />
+                    <p className="toolbar-setting-label">Grid</p>
+                    <div className="toolbar-setting">
+                      <span>Shape</span>
+                      <div className="toolbar-grid-types" role="group" aria-label="Grid type">
+                        {GRID_TYPE_OPTIONS.map((option) => {
+                          const active = (map.gridType ?? "square") === option.id;
+                          return (
+                            <button
+                              key={option.id}
+                              type="button"
+                              className={active ? "is-active" : ""}
+                              aria-label={option.label}
+                              aria-pressed={active}
+                              onClick={() => send({ type: "update_map", patch: { gridType: option.id } })}
+                            >
+                              <GridTypeIcon type={option.id} />
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    <label className="toolbar-setting">
+                      <span>Size</span>
+                      <NumberField
+                        min={GRID_SIZE_MIN}
+                        max={GRID_SIZE_MAX}
+                        value={map.gridSize}
+                        onCommit={(next) =>
+                          send({ type: "update_map", patch: { gridSize: clampGridSize(next) } })
+                        }
+                      />
+                    </label>
+                    <div className="toolbar-setting-rule" />
+                    <button
+                      type="button"
+                      className="toolbar-setting toolbar-setting-btn"
+                      onClick={() => send({ type: "update_map", patch: { snap: !map.snap } })}
+                    >
+                      <span>Snap to grid</span>
+                      <span className={`toolbar-switch ${map.snap ? "on" : ""}`} aria-hidden="true" />
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
           <div className="toolbar-side">
             <button
               type="button"
@@ -774,104 +945,6 @@ export function Toolbar({
                 </div>
               ) : null}
             </div>
-            {isGm ? (
-              <div ref={settingsRef} className="toolbar-popover-anchor">
-                <button
-                  type="button"
-                  className={`tool-icon ${settingsOpen ? "is-active" : ""}`}
-                  aria-expanded={settingsOpen}
-                  aria-label="Map settings"
-                  onClick={() => {
-                    setPlacementOpen(false);
-                    setPaletteOpen(false);
-                    setSettingsOpen((open) => !open);
-                  }}
-                >
-                  <IconMap />
-                  <span className="tool-tip">Map settings</span>
-                </button>
-                {settingsOpen ? (
-                  <div className="toolbar-popover">
-                    <label className="toolbar-setting toolbar-setting-btn">
-                      <span>Background</span>
-                      <span className="toolbar-file">{hasMapImage ? "Replace" : "Optional"}</span>
-                      <input
-                        type="file"
-                        accept="image/png,image/jpeg,image/webp,image/gif"
-                        hidden
-                        onChange={(evt) => {
-                          void onUploadMap(evt.target.files?.[0]);
-                          setSettingsOpen(false);
-                        }}
-                      />
-                    </label>
-                    <button
-                      type="button"
-                      className={`toolbar-setting toolbar-setting-btn ${aligning ? "is-aligning" : ""}`}
-                      onClick={() => {
-                        if (aligning) onStopAlign?.();
-                        else onStartAlign?.();
-                        setSettingsOpen(false);
-                      }}
-                    >
-                      <span>{aligning ? "Done aligning" : "Align grid"}</span>
-                      <span className="toolbar-file">{aligning ? "Esc" : "Drag"}</span>
-                    </button>
-                    <label className="toolbar-setting">
-                      <span>Grid</span>
-                      <select
-                        className="toolbar-grid-type"
-                        value={map.gridType ?? "square"}
-                        aria-label="Grid type"
-                        onChange={(evt) =>
-                          send({
-                            type: "update_map",
-                            patch: { gridType: evt.target.value as GridType },
-                          })
-                        }
-                      >
-                        {GRID_TYPES.map((type) => (
-                          <option key={type} value={type}>
-                            {GRID_TYPE_LABELS[type]}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <button
-                      type="button"
-                      className="toolbar-setting toolbar-setting-btn"
-                      onClick={() => send({ type: "update_map", patch: { snap: !map.snap } })}
-                    >
-                      <span>Snap to grid</span>
-                      <span className={`toolbar-switch ${map.snap ? "on" : ""}`} aria-hidden="true" />
-                    </button>
-                    <label className="toolbar-setting">
-                      <span>Grid size</span>
-                      <NumberField
-                        min={GRID_SIZE_MIN}
-                        max={GRID_SIZE_MAX}
-                        value={map.gridSize}
-                        onCommit={(next) =>
-                          send({ type: "update_map", patch: { gridSize: clampGridSize(next) } })
-                        }
-                      />
-                    </label>
-                    <button
-                      type="button"
-                      className="toolbar-setting toolbar-setting-btn"
-                      onClick={() => openPaletteEditor()}
-                    >
-                      <span>Paint colors</span>
-                      <span className="toolbar-palette-mini" aria-hidden="true">
-                        {colors.slice(0, 6).map((color) => (
-                          <i key={color} style={{ background: color }} />
-                        ))}
-                      </span>
-                    </button>
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
             <button
               type="button"
               className={`tool-icon ${helpOpen ? "is-active" : ""}`}

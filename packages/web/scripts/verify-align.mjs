@@ -123,7 +123,7 @@ try {
   await writeFile(pngPath, png);
 
   await page.getByRole("button", { name: "Map settings" }).click();
-  await page.locator('.toolbar-popover input[type="file"]').setInputFiles(pngPath);
+  await page.locator("input.toolbar-file-input").setInputFiles(pngPath);
   await page.getByRole("dialog", { name: "Align grid" }).waitFor({ timeout: 15_000 });
   await page.locator("img.map-image").waitFor({ timeout: 15_000 });
   await page.locator("svg.map-drawing.grid.is-aligning").waitFor({ timeout: 10_000 });
@@ -208,6 +208,19 @@ try {
   await page.locator(".map-align").waitFor({ state: "detached", timeout: 5_000 });
   notes.push("escape exits align");
   await shot(page, "align-04-done");
+
+  await page.getByRole("button", { name: "Map settings" }).click();
+  await page.getByRole("button", { name: "Remove image" }).click();
+  await page.locator(".map-blank").waitFor({ timeout: 10_000 });
+  await page.locator("img.map-image").waitFor({ state: "detached", timeout: 5_000 });
+  await page.getByRole("button", { name: "Map settings" }).click();
+  if ((await page.getByRole("button", { name: "Remove image" }).count()) !== 0) {
+    throw new Error("Remove image still shown after clearing the background");
+  }
+  if ((await page.getByRole("button", { name: "Align grid" }).count()) !== 0) {
+    throw new Error("Align grid still shown after clearing the background");
+  }
+  notes.push("remove image restores the blank grid");
 
   console.log(JSON.stringify({ ok: true, notes }, null, 2));
 } catch (err) {

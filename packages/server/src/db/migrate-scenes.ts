@@ -94,4 +94,5 @@ export async function migrateScenes() {
   await exec(sql`CREATE INDEX IF NOT EXISTS tokens_scene_id_idx ON tokens (scene_id)`);
   await exec(sql`ALTER TABLE tokens ALTER COLUMN scene_id SET NOT NULL`);
   await exec(sql`ALTER TABLE scenes ADD COLUMN IF NOT EXISTS grid_type text NOT NULL DEFAULT 'square'`);
+  await exec(sql`ALTER TABLE tokens ALTER COLUMN size TYPE double precision USING size::double precision`);
 }

@@ -31,7 +31,7 @@ try {
   notes.push("hosted blank square map");
 
   await page.getByRole("button", { name: "Map settings" }).click();
-  await page.getByLabel("Grid type").selectOption("hexFlat");
+  await page.getByRole("button", { name: "Flat hex grid" }).click();
   await page.waitForFunction(() => (document.querySelector("path.map-grid-hex")?.getAttribute("d") ?? "").length > 0);
   notes.push("hex flat grid drawn");
 
@@ -59,11 +59,19 @@ try {
   notes.push(`painted ${await page.locator("svg.map-drawing.edges line").count()} hex edges`);
 
   await page.getByRole("button", { name: "Map settings" }).click();
-  await page.getByLabel("Grid type").selectOption("hexPointy");
+  await page.getByRole("button", { name: "Pointy hex grid" }).click();
   await page.waitForFunction(() => (document.querySelector("path.map-grid-hex")?.getAttribute("d") ?? "").length > 0);
   notes.push("switched to hex pointy");
 
-  const sizeInput = page.getByLabel("Grid size");
+  await page.getByRole("button", { name: "Place token" }).click();
+  await map.click({ position: { x, y } });
+  await page.locator("button.token").waitFor({ timeout: 10_000 });
+  if ((await page.locator("p.error").count()) > 0) {
+    throw new Error(`token place failed: ${await page.locator("p.error").innerText()}`);
+  }
+  notes.push("placed token on hex");
+
+  const sizeInput = page.getByLabel("Size");
   await sizeInput.click({ clickCount: 3 });
   const typedAt = Date.now();
   await page.keyboard.type("30", { delay: 120 });
@@ -77,7 +85,7 @@ try {
   if (elapsed > 3000) throw new Error(`grid size typing took ${elapsed}ms`);
   notes.push(`typed grid size 30 without intermediate commits (${elapsed}ms, path ${midSize} chars mid-edit)`);
 
-  await page.getByLabel("Grid type").selectOption("square");
+  await page.getByRole("button", { name: "Square grid" }).click();
   await page.waitForFunction(
     () =>
       !document.querySelector("path.map-grid-hex") &&
