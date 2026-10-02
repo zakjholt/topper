@@ -97,6 +97,7 @@ export const scenes = pgTable(
     imageUrl: text("image_url"),
     width: integer("width").notNull().default(2000),
     height: integer("height").notNull().default(1400),
+    gridType: text("grid_type").notNull().default("square"),
     gridSize: integer("grid_size").notNull().default(70),
     snap: boolean("snap").notNull().default(true),
     offsetX: integer("offset_x").notNull().default(0),

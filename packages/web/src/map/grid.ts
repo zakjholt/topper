@@ -1,4 +1,14 @@
-import type { EdgeDir } from "@topper/shared";
+import {
+  asHexDir,
+  cellCenter,
+  hexEdgeEndpoints,
+  hexNeighbor,
+  isHexGrid,
+  nearestHexEdge,
+  worldToCell as sharedWorldToCell,
+  type EdgeDir,
+  type GridType,
+} from "@topper/shared";
 
 export function worldToCell(
   worldX: number,
@@ -6,12 +16,9 @@ export function worldToCell(
   gridSize: number,
   offsetX: number,
   offsetY: number,
+  gridType: GridType = "square",
 ) {
-  const size = Math.max(1, gridSize);
-  return {
-    x: Math.floor((worldX - offsetX) / size),
-    y: Math.floor((worldY - offsetY) / size),
-  };
+  return sharedWorldToCell(worldX, worldY, gridSize, offsetX, offsetY, gridType);
 }
 
 export function nearestVertex(
@@ -35,7 +42,18 @@ export function closerEdgeVertex(
   gridSize: number,
   offsetX: number,
   offsetY: number,
+  gridType: GridType = "square",
 ) {
+  if (isHexGrid(gridType)) {
+    const dir = asHexDir(edge.dir);
+    if (dir !== null) {
+      const { a, b } = hexEdgeEndpoints(edge.x, edge.y, dir, gridSize, offsetX, offsetY, gridType);
+      const da = Math.hypot(worldX - a.x, worldY - a.y);
+      const db = Math.hypot(worldX - b.x, worldY - b.y);
+      return da <= db ? { x: edge.x, y: edge.y } : hexNeighbor(edge.x, edge.y, dir);
+    }
+  }
+  if (edge.dir !== "h" && edge.dir !== "v") return { x: edge.x, y: edge.y };
   const vertex = nearestVertex(worldX, worldY, gridSize, offsetX, offsetY);
   if (edge.dir === "h") {
     const left = { x: edge.x, y: edge.y };
@@ -53,7 +71,11 @@ export function nearestEdge(
   gridSize: number,
   offsetX: number,
   offsetY: number,
+  gridType: GridType = "square",
 ): { x: number; y: number; dir: EdgeDir } {
+  if (isHexGrid(gridType)) {
+    return nearestHexEdge(worldX, worldY, gridSize, offsetX, offsetY, gridType);
+  }
   const size = Math.max(1, gridSize);
   const localX = worldX - offsetX;
   const localY = worldY - offsetY;
@@ -107,9 +129,33 @@ export function gridLinePositions(mapLength: number, gridSize: number, offset: n
   for (; pos <= mapLength; pos += size) {
     if (pos >= 0) positions.push(pos);
   }
-  // Close the frame on the map edge when the last cell is only a partial square.
   if (positions.length === 0 || positions[positions.length - 1] !== mapLength) {
     positions.push(mapLength);
   }
   return positions;
 }
+
+export function tokenSnapPosition(
+  worldX: number,
+  worldY: number,
+  gridSize: number,
+  offsetX: number,
+  offsetY: number,
+  snap: boolean,
+  gridType: GridType,
+  tokenSize: number,
+) {
+  if (!snap) return { x: worldX, y: worldY };
+  if (isHexGrid(gridType)) {
+    const cell = worldToCell(worldX + tokenSize / 2, worldY + tokenSize / 2, gridSize, offsetX, offsetY, gridType);
+    const center = cellCenter(cell.x, cell.y, gridSize, offsetX, offsetY, gridType);
+    return { x: center.x - tokenSize / 2, y: center.y - tokenSize / 2 };
+  }
+  const size = Math.max(1, gridSize);
+  return {
+    x: Math.round((worldX - offsetX) / size) * size + offsetX,
+    y: Math.round((worldY - offsetY) / size) * size + offsetY,
+  };
+}
+
+export { cellCenter };

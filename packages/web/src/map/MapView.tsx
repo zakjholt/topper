@@ -6,6 +6,9 @@ import {
   edgeRunVertices,
   floodFill,
   getByPath,
+  hexEdgeRun,
+  hexTokenSize,
+  isHexGrid,
   rectCells,
   rectEdges,
   straightEdgeRun,
@@ -17,6 +20,7 @@ import { useTable } from "../table/TableProvider.tsx";
 import { uploadFile } from "../api.ts";
 import { AlignHud, MapDropOverlay } from "./AlignHud.tsx";
 import {
+  alignFromHexRect,
   alignFromRect,
   clampGridSize,
   clampOffset,
@@ -25,7 +29,7 @@ import {
   isFileDrag,
 } from "./align.ts";
 import { EdgeLayer, FillLayer, GridLayer } from "./DrawingLayer.tsx";
-import { closerEdgeVertex, nearestEdge, nearestVertex, worldToCell } from "./grid.ts";
+import { closerEdgeVertex, nearestEdge, nearestVertex, tokenSnapPosition, worldToCell } from "./grid.ts";
 import { Toolbar } from "./Toolbar.tsx";
 import { SceneBar } from "./SceneBar.tsx";
 import { defaultPaintColor } from "./palette.ts";
@@ -38,12 +42,6 @@ function wheelDeltaPixels(e: ReactWheelEvent<HTMLDivElement>) {
   if (e.deltaMode === 1) return e.deltaY * 16;
   if (e.deltaMode === 2) return e.deltaY * e.currentTarget.clientHeight;
   return e.deltaY;
-}
-
-function snapToGrid(value: number, size: number, offset: number, enabled: boolean) {
-  if (!enabled) return value;
-  const step = Math.max(1, size);
-  return Math.round((value - offset) / step) * step + offset;
 }
 
 type PanDrag = {
@@ -148,6 +146,7 @@ export function MapView() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dropDepth = useRef(0);
   const alignOffsetRef = useRef({ x: 0, y: 0 });
+  const [viewSize, setViewSize] = useState({ w: 0, h: 0 });
   const [panHeld, setPanHeld] = useState(false);
   const [mapBusy, setMapBusy] = useState(false);
   const [aligning, setAligning] = useState(false);
@@ -213,8 +212,15 @@ export function MapView() {
     const prevent = (e: WheelEvent) => {
       e.preventDefault();
     };
+    const measure = () => setViewSize({ w: node.clientWidth, h: node.clientHeight });
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
     node.addEventListener("wheel", prevent, { passive: false });
-    return () => node.removeEventListener("wheel", prevent);
+    return () => {
+      observer.disconnect();
+      node.removeEventListener("wheel", prevent);
+    };
   }, [snapshot]);
 
   function stopAlign() {
@@ -267,9 +273,10 @@ export function MapView() {
   }, [aligning, send]);
 
   const map = snapshot?.map;
+  const gridType = map?.gridType ?? "square";
   const bounds = useMemo(() => {
     if (!map) return null;
-    return cellBoundsForMap(map.width, map.height, map.gridSize, map.offsetX, map.offsetY);
+    return cellBoundsForMap(map.width, map.height, map.gridSize, map.offsetX, map.offsetY, map.gridType ?? "square");
   }, [map]);
 
   const previewFills = preview?.kind === "fill" ? preview : null;
@@ -277,15 +284,23 @@ export function MapView() {
   const previewEdges = useMemo(() => {
     if (!preview || preview.kind !== "edge") return null;
     if (preview.shape === "line") return preview.edges ?? null;
-    return rectEdges(preview.start.x, preview.start.y, preview.end.x, preview.end.y, preview.color);
-  }, [preview]);
+    return rectEdges(
+      preview.start.x,
+      preview.start.y,
+      preview.end.x,
+      preview.end.y,
+      preview.color,
+      gridType,
+    );
+  }, [preview, gridType]);
 
   const previewLine = useMemo(() => {
     if (!preview || preview.kind !== "edge" || preview.shape !== "line" || !preview.edges) return null;
+    if (isHexGrid(gridType)) return null;
     const vertices = edgeRunVertices(preview.edges);
     if (!vertices) return null;
     return { ...vertices, color: preview.color };
-  }, [preview]);
+  }, [preview, gridType]);
 
   if (!snapshot?.map) {
     return (
@@ -305,14 +320,17 @@ export function MapView() {
     };
   }
 
+  const mapGridType = mapState.gridType ?? "square";
+  const tokenSize = isHexGrid(mapGridType) ? hexTokenSize(mapState.gridSize) : mapState.gridSize;
+
   function cellFromClient(clientX: number, clientY: number) {
     const world = worldFromClient(clientX, clientY);
-    return worldToCell(world.x, world.y, mapState.gridSize, mapState.offsetX, mapState.offsetY);
+    return worldToCell(world.x, world.y, mapState.gridSize, mapState.offsetX, mapState.offsetY, mapGridType);
   }
 
   function edgeFromClient(clientX: number, clientY: number) {
     const world = worldFromClient(clientX, clientY);
-    return nearestEdge(world.x, world.y, mapState.gridSize, mapState.offsetX, mapState.offsetY);
+    return nearestEdge(world.x, world.y, mapState.gridSize, mapState.offsetX, mapState.offsetY, mapGridType);
   }
 
   function onWheel(e: ReactWheelEvent<HTMLDivElement>) {
@@ -360,7 +378,15 @@ export function MapView() {
 
   function startVertexFromClient(edge: { x: number; y: number; dir: EdgeDir }, clientX: number, clientY: number) {
     const world = worldFromClient(clientX, clientY);
-    return closerEdgeVertex(edge, world.x, world.y, mapState.gridSize, mapState.offsetX, mapState.offsetY);
+    return closerEdgeVertex(
+      edge,
+      world.x,
+      world.y,
+      mapState.gridSize,
+      mapState.offsetX,
+      mapState.offsetY,
+      mapGridType,
+    );
   }
 
   function paintAtPointer(current: PaintDrag, clientX: number, clientY: number) {
@@ -376,6 +402,20 @@ export function MapView() {
         start: current.startCell,
         end: cell,
         color: current.color,
+      });
+      return;
+    }
+
+    if (isHexGrid(mapGridType)) {
+      const edges = hexEdgeRun(current.startEdge, cell, current.color);
+      current.edges = edges;
+      setPreview({
+        kind: "edge",
+        shape: "line",
+        start: current.startCell,
+        end: cell,
+        color: current.color,
+        edges,
       });
       return;
     }
@@ -412,7 +452,7 @@ export function MapView() {
       if (!bounds) return;
       const cells =
         !current.moved && current.flood
-          ? floodFill(mapState.fills, current.startCell, current.color, bounds)
+          ? floodFill(mapState.fills, current.startCell, current.color, bounds, mapGridType)
           : rectCells(
               current.startCell.x,
               current.startCell.y,
@@ -432,18 +472,21 @@ export function MapView() {
             current.currentCell.x,
             current.currentCell.y,
             current.color,
+            mapGridType,
           )
         : [{ ...current.startEdge, color: current.color }];
       if (edges.length > 0) send({ type: "paint_edges", edges, persist: true });
       return;
     }
-    const edges = straightEdgeRun(
-      current.startEdge,
-      current.startVertex,
-      current.currentVertex,
-      current.axis,
-      current.color,
-    );
+    const edges = isHexGrid(mapGridType)
+      ? hexEdgeRun(current.startEdge, current.currentCell, current.color)
+      : straightEdgeRun(
+          current.startEdge,
+          current.startVertex,
+          current.currentVertex,
+          current.axis,
+          current.color,
+        );
     if (edges.length > 0) send({ type: "paint_edges", edges, persist: true });
   }
 
@@ -491,14 +534,22 @@ export function MapView() {
 
     if (tool === "token" && e.button === 0) {
       const world = worldFromClient(e.clientX, e.clientY);
-      const x = snapToGrid(world.x - mapState.gridSize / 2, mapState.gridSize, mapState.offsetX, mapState.snap);
-      const y = snapToGrid(world.y - mapState.gridSize / 2, mapState.gridSize, mapState.offsetY, mapState.snap);
+      const pos = tokenSnapPosition(
+        world.x - tokenSize / 2,
+        world.y - tokenSize / 2,
+        mapState.gridSize,
+        mapState.offsetX,
+        mapState.offsetY,
+        mapState.snap,
+        mapGridType,
+        tokenSize,
+      );
       send({
         type: "place_token",
-        x,
-        y,
+        x: pos.x,
+        y: pos.y,
         label: "Token",
-        size: mapState.gridSize,
+        size: tokenSize,
       });
       setTool("select");
       return;
@@ -552,9 +603,18 @@ export function MapView() {
     if (current.kind === "token") {
       if (Math.hypot(e.clientX - current.startX, e.clientY - current.startY) > 3) current.moved = true;
       const world = worldFromClient(e.clientX, e.clientY);
-      const x = snapToGrid(world.x - current.originX, mapState.gridSize, mapState.offsetX, mapState.snap);
-      const y = snapToGrid(world.y - current.originY, mapState.gridSize, mapState.offsetY, mapState.snap);
-      send({ type: "move_token", tokenId: current.id, x, y, persist: false });
+      const size = tokens.find((t) => t.id === current.id)?.size ?? tokenSize;
+      const pos = tokenSnapPosition(
+        world.x - current.originX,
+        world.y - current.originY,
+        mapState.gridSize,
+        mapState.offsetX,
+        mapState.offsetY,
+        mapState.snap,
+        mapGridType,
+        size,
+      );
+      send({ type: "move_token", tokenId: current.id, x: pos.x, y: pos.y, persist: false });
       return;
     }
     if (current.kind === "align") {
@@ -576,7 +636,11 @@ export function MapView() {
       const height = Math.abs(world.y - current.startY);
       setAlignSquare({ x: left, y: top, width, height });
       if (current.moved && (width > 8 || height > 8)) {
-        setAlignDraft(alignFromRect(current.startX, current.startY, world.x, world.y));
+        setAlignDraft(
+          isHexGrid(mapGridType)
+            ? alignFromHexRect(current.startX, current.startY, world.x, world.y, mapGridType)
+            : alignFromRect(current.startX, current.startY, world.x, world.y),
+        );
       }
       return;
     }
@@ -590,9 +654,18 @@ export function MapView() {
     if (!current) return;
     if (current.kind === "token") {
       const world = worldFromClient(e.clientX, e.clientY);
-      const x = snapToGrid(world.x - current.originX, mapState.gridSize, mapState.offsetX, mapState.snap);
-      const y = snapToGrid(world.y - current.originY, mapState.gridSize, mapState.offsetY, mapState.snap);
-      send({ type: "move_token", tokenId: current.id, x, y, persist: true });
+      const size = tokens.find((t) => t.id === current.id)?.size ?? tokenSize;
+      const pos = tokenSnapPosition(
+        world.x - current.originX,
+        world.y - current.originY,
+        mapState.gridSize,
+        mapState.offsetX,
+        mapState.offsetY,
+        mapState.snap,
+        mapGridType,
+        size,
+      );
+      send({ type: "move_token", tokenId: current.id, x: pos.x, y: pos.y, persist: true });
       if (!current.moved) {
         const token = tokens.find((t) => t.id === current.id);
         setSelectedTokenId(current.id);
@@ -620,7 +693,9 @@ export function MapView() {
         if (width > 8 || height > 8) {
           send({
             type: "update_map",
-            patch: alignFromRect(current.startX, current.startY, world.x, world.y),
+            patch: isHexGrid(mapGridType)
+              ? alignFromHexRect(current.startX, current.startY, world.x, world.y, mapGridType)
+              : alignFromRect(current.startX, current.startY, world.x, world.y),
           });
         }
       }
@@ -792,6 +867,7 @@ export function MapView() {
             gridSize={grid.gridSize}
             offsetX={grid.offsetX}
             offsetY={grid.offsetY}
+            gridType={mapGridType}
             live={Boolean(alignDraft)}
             hasImage={Boolean(mapState.imageUrl)}
             error={uploadError}
@@ -839,6 +915,7 @@ export function MapView() {
             gridSize={grid.gridSize}
             offsetX={grid.offsetX}
             offsetY={grid.offsetY}
+            gridType={mapGridType}
           />
           <GridLayer
             width={mapState.width}
@@ -846,7 +923,9 @@ export function MapView() {
             gridSize={grid.gridSize}
             offsetX={grid.offsetX}
             offsetY={grid.offsetY}
+            gridType={mapGridType}
             aligning={aligning}
+            view={{ x: pan.x, y: pan.y, zoom, width: viewSize.w, height: viewSize.h }}
           />
           {alignSquare ? (
             <svg className="map-drawing align-preview" width={mapState.width} height={mapState.height} viewBox={`0 0 ${mapState.width} ${mapState.height}`} preserveAspectRatio="none">
@@ -868,6 +947,7 @@ export function MapView() {
             gridSize={grid.gridSize}
             offsetX={grid.offsetX}
             offsetY={grid.offsetY}
+            gridType={mapGridType}
           />
           {tokens.map((token) => {
             const character = snapshot.characters.find((ch) => ch.id === token.characterId);

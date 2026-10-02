@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { DiceRollResult } from "./dice.ts";
 import type { CellPatch, EdgePatch } from "./drawing.ts";
+import type { GridType } from "./gridGeometry.ts";
 
 export type MemberRole = "gm" | "player";
 
@@ -22,6 +23,7 @@ export type MapState = {
   imageUrl: string | null;
   width: number;
   height: number;
+  gridType: GridType;
   gridSize: number;
   snap: boolean;
   offsetX: number;
@@ -93,9 +95,11 @@ export const cellPatchSchema = z.object({
 export const edgePatchSchema = z.object({
   x: cellCoordSchema,
   y: cellCoordSchema,
-  dir: z.enum(["h", "v"]),
+  dir: z.enum(["h", "v", "0", "1", "2", "3", "4", "5"]),
   color: paintColorSchema.nullable(),
 });
+
+export const gridTypeSchema = z.enum(["square", "hexFlat", "hexPointy"]);
 
 export const clientActionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("join_table"), tableId: z.string().min(1) }),
@@ -138,6 +142,7 @@ export const clientActionSchema = z.discriminatedUnion("type", [
       imageUrl: z.string().nullable().optional(),
       width: z.number().positive().optional(),
       height: z.number().positive().optional(),
+      gridType: gridTypeSchema.optional(),
       gridSize: z.number().positive().optional(),
       snap: z.boolean().optional(),
       offsetX: z.number().optional(),

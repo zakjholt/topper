@@ -1,5 +1,9 @@
+import { gridCounts as sharedGridCounts, type GridType } from "@topper/shared";
+
 export const GRID_SIZE_MIN = 8;
 export const GRID_SIZE_MAX = 800;
+
+const SQRT3 = Math.sqrt(3);
 
 export function clampGridSize(value: number) {
   if (!Number.isFinite(value)) return 70;
@@ -23,18 +27,37 @@ export function alignFromRect(x1: number, y1: number, x2: number, y2: number) {
   };
 }
 
+export function alignFromHexRect(
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  gridType: "hexFlat" | "hexPointy",
+) {
+  const left = Math.min(x1, x2);
+  const top = Math.min(y1, y2);
+  const width = Math.abs(x2 - x1);
+  const height = Math.abs(y2 - y1);
+  const size =
+    gridType === "hexFlat"
+      ? clampGridSize((width / 2 + height / SQRT3) / 2)
+      : clampGridSize((width / SQRT3 + height / 2) / 2);
+  return {
+    gridSize: size,
+    offsetX: clampOffset(gridType === "hexFlat" ? left + size : left + (SQRT3 / 2) * size),
+    offsetY: clampOffset(gridType === "hexFlat" ? top + (SQRT3 / 2) * size : top + size),
+  };
+}
+
 export function gridCounts(
   width: number,
   height: number,
   gridSize: number,
   offsetX: number,
   offsetY: number,
+  gridType: GridType = "square",
 ) {
-  const size = Math.max(1, gridSize);
-  return {
-    cols: Math.max(1, Math.round((width - offsetX) / size)),
-    rows: Math.max(1, Math.round((height - offsetY) / size)),
-  };
+  return sharedGridCounts(width, height, gridSize, offsetX, offsetY, gridType);
 }
 
 export function fitMapInViewport(

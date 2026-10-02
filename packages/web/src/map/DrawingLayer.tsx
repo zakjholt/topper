@@ -1,4 +1,17 @@
-import { parseCellKey, parseEdgeKey, type EdgePatch } from "@topper/shared";
+import { useMemo } from "react";
+import {
+  asHexDir,
+  cellPolygon,
+  cellsInRect,
+  hexEdgeEndpoints,
+  isHexGrid,
+  parseCellKey,
+  parseEdgeKey,
+  polygonPointsAttr,
+  rectCells,
+  type EdgePatch,
+  type GridType,
+} from "@topper/shared";
 import { cellOrigin, cellsToWorldRect, gridLinePositions } from "./grid.ts";
 
 function drawingSvgProps(width: number, height: number) {
@@ -11,34 +24,72 @@ function drawingSvgProps(width: number, height: number) {
 }
 
 const ERASE_PREVIEW = "#f0e4c8";
+const MIN_HEX_SCREEN_PX = 6;
 
-function FillRects({
+export type GridView = {
+  x: number;
+  y: number;
+  zoom: number;
+  width: number;
+  height: number;
+};
+
+function hexGridPath(
+  gridSize: number,
+  offsetX: number,
+  offsetY: number,
+  gridType: GridType,
+  view: GridView,
+) {
+  if (view.width <= 0 || view.height <= 0 || view.zoom <= 0) return "";
+  if (gridSize * view.zoom < MIN_HEX_SCREEN_PX) return "";
+  const step = Math.max(1, gridSize);
+  const worldX = Math.floor(-view.x / view.zoom / step) * step;
+  const worldY = Math.floor(-view.y / view.zoom / step) * step;
+  const round = (n: number) => Math.round(n * 10) / 10;
+  let d = "";
+  for (const cell of cellsInRect(
+    worldX,
+    worldY,
+    worldX + view.width / view.zoom,
+    worldY + view.height / view.zoom,
+    gridSize,
+    offsetX,
+    offsetY,
+    gridType,
+  )) {
+    const points = cellPolygon(cell.x, cell.y, gridSize, offsetX, offsetY, gridType);
+    d += `M${round(points[0]!.x)},${round(points[0]!.y)}`;
+    for (let i = 1; i < points.length; i += 1) d += `L${round(points[i]!.x)},${round(points[i]!.y)}`;
+    d += "Z";
+  }
+  return d;
+}
+
+function FillShapes({
   fills,
   gridSize,
   offsetX,
   offsetY,
+  gridType,
 }: {
   fills: Record<string, string>;
   gridSize: number;
   offsetX: number;
   offsetY: number;
+  gridType: GridType;
 }) {
   return (
     <>
       {Object.entries(fills).map(([key, color]) => {
         const cell = parseCellKey(key);
         if (!cell) return null;
+        if (isHexGrid(gridType)) {
+          const points = cellPolygon(cell.x, cell.y, gridSize, offsetX, offsetY, gridType);
+          return <polygon key={key} points={polygonPointsAttr(points)} fill={color} />;
+        }
         const origin = cellOrigin(cell.x, cell.y, gridSize, offsetX, offsetY);
-        return (
-          <rect
-            key={key}
-            x={origin.x}
-            y={origin.y}
-            width={gridSize}
-            height={gridSize}
-            fill={color}
-          />
-        );
+        return <rect key={key} x={origin.x} y={origin.y} width={gridSize} height={gridSize} fill={color} />;
       })}
     </>
   );
@@ -49,6 +100,7 @@ function EdgeLines({
   gridSize,
   offsetX,
   offsetY,
+  gridType,
   opacity = 1,
   preview = false,
 }: {
@@ -56,6 +108,7 @@ function EdgeLines({
   gridSize: number;
   offsetX: number;
   offsetY: number;
+  gridType: GridType;
   opacity?: number;
   preview?: boolean;
 }) {
@@ -72,6 +125,24 @@ function EdgeLines({
       {entries.map((edge) => {
         const color = edge.color ?? (preview ? ERASE_PREVIEW : null);
         if (!color) return null;
+        if (isHexGrid(gridType)) {
+          const dir = asHexDir(edge.dir);
+          if (dir === null) return null;
+          const { a, b } = hexEdgeEndpoints(edge.x, edge.y, dir, gridSize, offsetX, offsetY, gridType);
+          return (
+            <line
+              key={`${edge.x},${edge.y},${edge.dir}`}
+              x1={a.x}
+              y1={a.y}
+              x2={b.x}
+              y2={b.y}
+              stroke={color}
+              strokeWidth={width}
+              strokeLinecap="round"
+              opacity={opacity}
+            />
+          );
+        }
         const origin = cellOrigin(edge.x, edge.y, gridSize, offsetX, offsetY);
         const x2 = edge.dir === "h" ? origin.x + gridSize : origin.x;
         const y2 = edge.dir === "v" ? origin.y + gridSize : origin.y;
@@ -107,6 +178,7 @@ export function FillLayer({
   gridSize,
   offsetX,
   offsetY,
+  gridType = "square",
 }: {
   fills: Record<string, string>;
   preview?: FillPreview | null;
@@ -115,15 +187,38 @@ export function FillLayer({
   gridSize: number;
   offsetX: number;
   offsetY: number;
+  gridType?: GridType;
 }) {
-  const box = preview
-    ? cellsToWorldRect(preview.start, preview.end, gridSize, offsetX, offsetY)
-    : null;
   const stroke = Math.max(3, gridSize * 0.06);
+  const hexPreview =
+    preview && isHexGrid(gridType)
+      ? rectCells(preview.start.x, preview.start.y, preview.end.x, preview.end.y, preview.color)
+      : null;
+  const box =
+    preview && !isHexGrid(gridType)
+      ? cellsToWorldRect(preview.start, preview.end, gridSize, offsetX, offsetY)
+      : null;
 
   return (
     <svg className="map-drawing fills" {...drawingSvgProps(width, height)}>
-      <FillRects fills={fills} gridSize={gridSize} offsetX={offsetX} offsetY={offsetY} />
+      <FillShapes fills={fills} gridSize={gridSize} offsetX={offsetX} offsetY={offsetY} gridType={gridType} />
+      {hexPreview && preview
+        ? hexPreview.map((cell) => {
+            const points = cellPolygon(cell.x, cell.y, gridSize, offsetX, offsetY, gridType);
+            return (
+              <polygon
+                key={`preview-${cell.x},${cell.y}`}
+                className="map-fill-preview"
+                points={polygonPointsAttr(points)}
+                fill={preview.color ?? ERASE_PREVIEW}
+                fillOpacity={preview.color ? 0.5 : 0.28}
+                stroke={preview.color ?? "#e07a6c"}
+                strokeWidth={stroke}
+                strokeDasharray={`${gridSize * 0.2} ${gridSize * 0.12}`}
+              />
+            );
+          })
+        : null}
       {box && preview ? (
         <rect
           className="map-fill-preview"
@@ -151,6 +246,7 @@ export function EdgeLayer({
   gridSize,
   offsetX,
   offsetY,
+  gridType = "square",
 }: {
   edges: Record<string, string>;
   preview?: EdgePatch[] | null;
@@ -160,10 +256,13 @@ export function EdgeLayer({
   gridSize: number;
   offsetX: number;
   offsetY: number;
+  gridType?: GridType;
 }) {
   const widthStroke = Math.max(6, gridSize * 0.12);
   const line =
-    linePreview && (linePreview.start.x !== linePreview.end.x || linePreview.start.y !== linePreview.end.y)
+    !isHexGrid(gridType) &&
+    linePreview &&
+    (linePreview.start.x !== linePreview.end.x || linePreview.start.y !== linePreview.end.y)
       ? {
           a: cellOrigin(linePreview.start.x, linePreview.start.y, gridSize, offsetX, offsetY),
           b: cellOrigin(linePreview.end.x, linePreview.end.y, gridSize, offsetX, offsetY),
@@ -173,13 +272,14 @@ export function EdgeLayer({
 
   return (
     <svg className="map-drawing edges" {...drawingSvgProps(width, height)}>
-      <EdgeLines edges={edges} gridSize={gridSize} offsetX={offsetX} offsetY={offsetY} />
+      <EdgeLines edges={edges} gridSize={gridSize} offsetX={offsetX} offsetY={offsetY} gridType={gridType} />
       {preview && preview.length > 0 ? (
         <EdgeLines
           edges={preview}
           gridSize={gridSize}
           offsetX={offsetX}
           offsetY={offsetY}
+          gridType={gridType}
           opacity={0.55}
           preview
         />
@@ -207,15 +307,44 @@ export function GridLayer({
   gridSize,
   offsetX,
   offsetY,
+  gridType = "square",
   aligning = false,
+  view,
 }: {
   width: number;
   height: number;
   gridSize: number;
   offsetX: number;
   offsetY: number;
+  gridType?: GridType;
   aligning?: boolean;
+  view?: GridView;
 }) {
+  const step = Math.max(1, gridSize);
+  const zoom = view?.zoom ?? 1;
+  const viewWidth = view?.width ?? 0;
+  const viewHeight = view?.height ?? 0;
+  const cellX = view && zoom > 0 ? Math.floor(-view.x / zoom / step) : 0;
+  const cellY = view && zoom > 0 ? Math.floor(-view.y / zoom / step) : 0;
+  const hexPath = useMemo(() => {
+    if (!isHexGrid(gridType) || zoom <= 0) return "";
+    return hexGridPath(gridSize, offsetX, offsetY, gridType, {
+      x: -cellX * step * zoom,
+      y: -cellY * step * zoom,
+      zoom,
+      width: viewWidth,
+      height: viewHeight,
+    });
+  }, [cellX, cellY, gridSize, gridType, offsetX, offsetY, step, viewHeight, viewWidth, zoom]);
+
+  if (isHexGrid(gridType)) {
+    return (
+      <svg className={`map-drawing grid ${aligning ? "is-aligning" : ""}`} {...drawingSvgProps(width, height)}>
+        {hexPath ? <path className="map-grid-hex" d={hexPath} /> : null}
+      </svg>
+    );
+  }
+
   const vertical = gridLinePositions(width, gridSize, offsetX);
   const horizontal = gridLinePositions(height, gridSize, offsetY);
   return (

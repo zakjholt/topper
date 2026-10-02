@@ -14,6 +14,7 @@ export async function migrateScenes() {
       image_url text,
       width integer NOT NULL DEFAULT 2000,
       height integer NOT NULL DEFAULT 1400,
+      grid_type text NOT NULL DEFAULT 'square',
       grid_size integer NOT NULL DEFAULT 70,
       snap boolean NOT NULL DEFAULT true,
       offset_x integer NOT NULL DEFAULT 0,
@@ -92,4 +93,5 @@ export async function migrateScenes() {
   `);
   await exec(sql`CREATE INDEX IF NOT EXISTS tokens_scene_id_idx ON tokens (scene_id)`);
   await exec(sql`ALTER TABLE tokens ALTER COLUMN scene_id SET NOT NULL`);
+  await exec(sql`ALTER TABLE scenes ADD COLUMN IF NOT EXISTS grid_type text NOT NULL DEFAULT 'square'`);
 }

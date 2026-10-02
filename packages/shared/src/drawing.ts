@@ -1,4 +1,16 @@
-export type EdgeDir = "h" | "v";
+import {
+  asHexDir,
+  canonicalizeHexEdge,
+  cellBoundsForMap as geometryCellBoundsForMap,
+  hexLine,
+  hexNeighbors,
+  isHexGrid,
+  sharedHexDir,
+  type GridType,
+  type HexDir,
+} from "./gridGeometry.ts";
+
+export type EdgeDir = "h" | "v" | "0" | "1" | "2" | "3" | "4" | "5";
 
 export type CellPatch = {
   x: number;
@@ -19,6 +31,8 @@ export type CellBounds = {
   maxX: number;
   maxY: number;
 };
+
+const EDGE_DIRS = new Set<string>(["h", "v", "0", "1", "2", "3", "4", "5"]);
 
 export function cellKey(x: number, y: number): string {
   return `${x},${y}`;
@@ -42,8 +56,8 @@ export function parseEdgeKey(key: string): { x: number; y: number; dir: EdgeDir 
   const x = Number(parts[0]);
   const y = Number(parts[1]);
   const dir = parts[2];
-  if (!Number.isInteger(x) || !Number.isInteger(y) || (dir !== "h" && dir !== "v")) return null;
-  return { x, y, dir };
+  if (!Number.isInteger(x) || !Number.isInteger(y) || !dir || !EDGE_DIRS.has(dir)) return null;
+  return { x, y, dir: dir as EdgeDir };
 }
 
 export function asColorMap(value: unknown): Record<string, string> {
@@ -53,6 +67,13 @@ export function asColorMap(value: unknown): Record<string, string> {
     if (typeof color === "string") next[key] = color;
   }
   return next;
+}
+
+export function normalizeEdgePatch(patch: EdgePatch): EdgePatch {
+  const hexDir = asHexDir(patch.dir);
+  if (hexDir === null) return patch;
+  const canonical = canonicalizeHexEdge(patch.x, patch.y, hexDir);
+  return { x: canonical.x, y: canonical.y, dir: canonical.dir, color: patch.color };
 }
 
 export function mergeFills(current: Record<string, string>, patches: CellPatch[]): Record<string, string> {
@@ -68,9 +89,10 @@ export function mergeFills(current: Record<string, string>, patches: CellPatch[]
 export function mergeEdges(current: Record<string, string>, patches: EdgePatch[]): Record<string, string> {
   const next = { ...current };
   for (const patch of patches) {
-    const key = edgeKey(patch.x, patch.y, patch.dir);
-    if (patch.color === null) delete next[key];
-    else next[key] = patch.color;
+    const normalized = normalizeEdgePatch(patch);
+    const key = edgeKey(normalized.x, normalized.y, normalized.dir);
+    if (normalized.color === null) delete next[key];
+    else next[key] = normalized.color;
   }
   return next;
 }
@@ -92,14 +114,9 @@ export function cellBoundsForMap(
   gridSize: number,
   offsetX: number,
   offsetY: number,
+  gridType: GridType = "square",
 ): CellBounds {
-  const size = Math.max(1, gridSize);
-  return {
-    minX: Math.floor((0 - offsetX) / size),
-    minY: Math.floor((0 - offsetY) / size),
-    maxX: Math.floor((width - 1 - offsetX) / size),
-    maxY: Math.floor((height - 1 - offsetY) / size),
-  };
+  return geometryCellBoundsForMap(width, height, gridSize, offsetX, offsetY, gridType);
 }
 
 export function floodFill(
@@ -107,6 +124,7 @@ export function floodFill(
   start: { x: number; y: number },
   paintColor: string | null,
   bounds: CellBounds,
+  gridType: GridType = "square",
 ): CellPatch[] {
   if (!cellInBounds(start.x, start.y, bounds)) return [];
   const target = fills[cellKey(start.x, start.y)] ?? null;
@@ -115,6 +133,14 @@ export function floodFill(
   const patches: CellPatch[] = [];
   const seen = new Set<string>();
   const queue = [start];
+  const neighborFn = isHexGrid(gridType)
+    ? (cell: { x: number; y: number }) => hexNeighbors(cell.x, cell.y)
+    : (cell: { x: number; y: number }) => [
+        { x: cell.x + 1, y: cell.y },
+        { x: cell.x - 1, y: cell.y },
+        { x: cell.x, y: cell.y + 1 },
+        { x: cell.x, y: cell.y - 1 },
+      ];
 
   while (queue.length > 0) {
     const cell = queue.pop()!;
@@ -125,12 +151,7 @@ export function floodFill(
     if (color !== target) continue;
     seen.add(key);
     patches.push({ x: cell.x, y: cell.y, color: paintColor });
-    queue.push(
-      { x: cell.x + 1, y: cell.y },
-      { x: cell.x - 1, y: cell.y },
-      { x: cell.x, y: cell.y + 1 },
-      { x: cell.x, y: cell.y - 1 },
-    );
+    queue.push(...neighborFn(cell));
   }
 
   return patches;
@@ -164,19 +185,48 @@ export function rectEdges(
   x1: number,
   y1: number,
   color: string | null,
+  gridType: GridType = "square",
 ): EdgePatch[] {
+  if (!isHexGrid(gridType)) {
+    const minX = Math.min(x0, x1);
+    const maxX = Math.max(x0, x1);
+    const minY = Math.min(y0, y1);
+    const maxY = Math.max(y0, y1);
+    const edges: EdgePatch[] = [];
+    for (let x = minX; x <= maxX; x += 1) {
+      edges.push({ x, y: minY, dir: "h", color });
+      edges.push({ x, y: maxY + 1, dir: "h", color });
+    }
+    for (let y = minY; y <= maxY; y += 1) {
+      edges.push({ x: minX, y, dir: "v", color });
+      edges.push({ x: maxX + 1, y, dir: "v", color });
+    }
+    return edges;
+  }
+
   const minX = Math.min(x0, x1);
   const maxX = Math.max(x0, x1);
   const minY = Math.min(y0, y1);
   const maxY = Math.max(y0, y1);
-  const edges: EdgePatch[] = [];
-  for (let x = minX; x <= maxX; x += 1) {
-    edges.push({ x, y: minY, dir: "h", color });
-    edges.push({ x, y: maxY + 1, dir: "h", color });
-  }
+  const inside = new Set<string>();
   for (let y = minY; y <= maxY; y += 1) {
-    edges.push({ x: minX, y, dir: "v", color });
-    edges.push({ x: maxX + 1, y, dir: "v", color });
+    for (let x = minX; x <= maxX; x += 1) inside.add(cellKey(x, y));
+  }
+  const edges: EdgePatch[] = [];
+  const seen = new Set<string>();
+  for (let y = minY; y <= maxY; y += 1) {
+    for (let x = minX; x <= maxX; x += 1) {
+      for (let d = 0; d < 6; d += 1) {
+        const dir = d as HexDir;
+        const n = hexNeighbors(x, y)[dir]!;
+        if (inside.has(cellKey(n.x, n.y))) continue;
+        const canonical = canonicalizeHexEdge(x, y, dir);
+        const key = edgeKey(canonical.x, canonical.y, canonical.dir);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        edges.push({ x: canonical.x, y: canonical.y, dir: canonical.dir, color });
+      }
+    }
   }
   return edges;
 }
@@ -197,14 +247,17 @@ export function axisLineEdges(
     }
     return edges;
   }
-  const x = start.x;
-  const minY = Math.min(start.y, end.y);
-  const maxY = Math.max(start.y, end.y);
-  const edges: EdgePatch[] = [];
-  for (let y = minY; y < maxY; y += 1) {
-    edges.push({ x, y, dir: "v", color });
+  if (axis === "v") {
+    const x = start.x;
+    const minY = Math.min(start.y, end.y);
+    const maxY = Math.max(start.y, end.y);
+    const edges: EdgePatch[] = [];
+    for (let y = minY; y < maxY; y += 1) {
+      edges.push({ x, y, dir: "v", color });
+    }
+    return edges;
   }
-  return edges;
+  return [];
 }
 
 function sameEdge(
@@ -221,7 +274,7 @@ export function straightEdgeRun(
   axis: EdgeDir | null,
   color: string | null,
 ): EdgePatch[] {
-  if (!axis) return [{ ...startEdge, color }];
+  if (!axis || (axis !== "h" && axis !== "v")) return [{ ...startEdge, color }];
   const end =
     axis === "h"
       ? { x: currentVertex.x, y: startVertex.y }
@@ -231,6 +284,54 @@ export function straightEdgeRun(
     edges.push({ ...startEdge, color });
   }
   return edges.length > 0 ? edges : [{ ...startEdge, color }];
+}
+
+/** Paint the locked hex edge direction along a hex line of cells. */
+export function hexEdgeRun(
+  startEdge: { x: number; y: number; dir: EdgeDir },
+  endCell: { x: number; y: number },
+  color: string | null,
+): EdgePatch[] {
+  const dir = asHexDir(startEdge.dir);
+  if (dir === null) return [{ ...normalizeEdgePatch({ ...startEdge, color }) }];
+  const line = hexLine({ x: startEdge.x, y: startEdge.y }, endCell);
+  const edges: EdgePatch[] = [];
+  const seen = new Set<string>();
+  for (const cell of line) {
+    const canonical = canonicalizeHexEdge(cell.x, cell.y, dir);
+    const key = edgeKey(canonical.x, canonical.y, canonical.dir);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    edges.push({ x: canonical.x, y: canonical.y, dir: canonical.dir, color });
+  }
+  if (edges.length === 0) {
+    const canonical = canonicalizeHexEdge(startEdge.x, startEdge.y, dir);
+    edges.push({ x: canonical.x, y: canonical.y, dir: canonical.dir, color });
+  }
+  return edges;
+}
+
+/** Shared edges along a hex line (walls between consecutive cells). */
+export function hexLineSharedEdges(
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+  color: string | null,
+): EdgePatch[] {
+  const line = hexLine(start, end);
+  const edges: EdgePatch[] = [];
+  const seen = new Set<string>();
+  for (let i = 0; i < line.length - 1; i += 1) {
+    const a = line[i]!;
+    const b = line[i + 1]!;
+    const dir = sharedHexDir(a, b);
+    if (dir === null) continue;
+    const canonical = canonicalizeHexEdge(a.x, a.y, dir);
+    const key = edgeKey(canonical.x, canonical.y, canonical.dir);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    edges.push({ x: canonical.x, y: canonical.y, dir: canonical.dir, color });
+  }
+  return edges;
 }
 
 export function edgeRunVertices(edges: EdgePatch[]) {
@@ -247,12 +348,18 @@ export function edgeRunVertices(edges: EdgePatch[]) {
     }
     return { start: { x: minX, y }, end: { x: maxX, y } };
   }
-  const x = first.x;
-  let minY = first.y;
-  let maxY = first.y + 1;
-  for (const edge of matching) {
-    minY = Math.min(minY, edge.y);
-    maxY = Math.max(maxY, edge.y + 1);
+  if (first.dir === "v") {
+    const x = first.x;
+    let minY = first.y;
+    let maxY = first.y + 1;
+    for (const edge of matching) {
+      minY = Math.min(minY, edge.y);
+      maxY = Math.max(maxY, edge.y + 1);
+    }
+    return { start: { x, y: minY }, end: { x, y: maxY } };
   }
-  return { start: { x, y: minY }, end: { x, y: maxY } };
+  return {
+    start: { x: first.x, y: first.y },
+    end: { x: matching[matching.length - 1]!.x, y: matching[matching.length - 1]!.y },
+  };
 }

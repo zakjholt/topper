@@ -1,4 +1,6 @@
+import { isHexGrid, type GridType } from "@topper/shared";
 import { GRID_SIZE_MAX, GRID_SIZE_MIN, gridCounts } from "./align.ts";
+import { NumberField } from "./NumberField.tsx";
 
 function IconMap() {
   return (
@@ -21,6 +23,7 @@ export function AlignHud({
   gridSize,
   offsetX,
   offsetY,
+  gridType = "square",
   live,
   hasImage,
   error,
@@ -33,6 +36,7 @@ export function AlignHud({
   gridSize: number;
   offsetX: number;
   offsetY: number;
+  gridType?: GridType;
   live: boolean;
   hasImage: boolean;
   error: string | null;
@@ -40,7 +44,8 @@ export function AlignHud({
   onDone: () => void;
   onReplace: () => void;
 }) {
-  const counts = gridCounts(width, height, gridSize, offsetX, offsetY);
+  const counts = gridCounts(width, height, gridSize, offsetX, offsetY, gridType);
+  const cellName = isHexGrid(gridType) ? "hex" : "square";
 
   return (
     <div className={`map-align ${live ? "is-live" : ""}`} role="dialog" aria-label="Align grid">
@@ -58,46 +63,26 @@ export function AlignHud({
       <p className="map-align-hint">
         {live
           ? "Release to snap the grid"
-          : "Drag one square on the map · Alt-drag or arrows to nudge · Esc when it lines up"}
+          : `Drag one ${cellName} on the map · Alt-drag or arrows to nudge · Esc when it lines up`}
       </p>
       <div className="map-align-fields">
         <label className="map-align-field">
           <span>Size</span>
-          <input
-            type="number"
+          <NumberField
             min={GRID_SIZE_MIN}
             max={GRID_SIZE_MAX}
             value={gridSize}
             disabled={live}
-            onChange={(evt) => onChange({ gridSize: Number(evt.target.value) })}
-            onKeyDown={(evt) => {
-              if (evt.key === "Enter") evt.currentTarget.blur();
-            }}
+            onCommit={(next) => onChange({ gridSize: next })}
           />
         </label>
         <label className="map-align-field">
           <span>X</span>
-          <input
-            type="number"
-            value={offsetX}
-            disabled={live}
-            onChange={(evt) => onChange({ offsetX: Number(evt.target.value) })}
-            onKeyDown={(evt) => {
-              if (evt.key === "Enter") evt.currentTarget.blur();
-            }}
-          />
+          <NumberField value={offsetX} disabled={live} onCommit={(next) => onChange({ offsetX: next })} />
         </label>
         <label className="map-align-field">
           <span>Y</span>
-          <input
-            type="number"
-            value={offsetY}
-            disabled={live}
-            onChange={(evt) => onChange({ offsetY: Number(evt.target.value) })}
-            onKeyDown={(evt) => {
-              if (evt.key === "Enter") evt.currentTarget.blur();
-            }}
-          />
+          <NumberField value={offsetY} disabled={live} onCommit={(next) => onChange({ offsetY: next })} />
         </label>
       </div>
       <button type="button" className="map-align-replace" onClick={onReplace}>

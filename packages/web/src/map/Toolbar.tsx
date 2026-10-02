@@ -10,9 +10,17 @@ import {
 } from "react";
 import type { Tool } from "../table/TableProvider.tsx";
 import { useTable } from "../table/TableProvider.tsx";
-import { GRID_SIZE_MAX, GRID_SIZE_MIN } from "./align.ts";
+import { GRID_TYPES, type GridType } from "@topper/shared";
+import { GRID_SIZE_MAX, GRID_SIZE_MIN, clampGridSize } from "./align.ts";
+import { NumberField } from "./NumberField.tsx";
 import { PaletteEditor } from "./PaletteEditor.tsx";
 import { nextPaletteColor, usePaintPalette } from "./palette.ts";
+
+const GRID_TYPE_LABELS: Record<GridType, string> = {
+  square: "Square",
+  hexFlat: "Hex flat",
+  hexPointy: "Hex pointy",
+};
 
 const TOOLS: Array<{
   id: Tool;
@@ -809,6 +817,26 @@ export function Toolbar({
                       <span>{aligning ? "Done aligning" : "Align grid"}</span>
                       <span className="toolbar-file">{aligning ? "Esc" : "Drag"}</span>
                     </button>
+                    <label className="toolbar-setting">
+                      <span>Grid</span>
+                      <select
+                        className="toolbar-grid-type"
+                        value={map.gridType ?? "square"}
+                        aria-label="Grid type"
+                        onChange={(evt) =>
+                          send({
+                            type: "update_map",
+                            patch: { gridType: evt.target.value as GridType },
+                          })
+                        }
+                      >
+                        {GRID_TYPES.map((type) => (
+                          <option key={type} value={type}>
+                            {GRID_TYPE_LABELS[type]}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
                     <button
                       type="button"
                       className="toolbar-setting toolbar-setting-btn"
@@ -819,13 +847,12 @@ export function Toolbar({
                     </button>
                     <label className="toolbar-setting">
                       <span>Grid size</span>
-                      <input
-                        type="number"
+                      <NumberField
                         min={GRID_SIZE_MIN}
                         max={GRID_SIZE_MAX}
                         value={map.gridSize}
-                        onChange={(evt) =>
-                          send({ type: "update_map", patch: { gridSize: Number(evt.target.value) || 70 } })
+                        onCommit={(next) =>
+                          send({ type: "update_map", patch: { gridSize: clampGridSize(next) } })
                         }
                       />
                     </label>

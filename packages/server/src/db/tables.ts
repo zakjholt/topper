@@ -12,7 +12,7 @@ import type {
   TableSnapshot,
   TokenState,
 } from "@topper/shared";
-import { asColorMap, mergeEdges, mergeFills } from "@topper/shared";
+import { asColorMap, isGridType, mergeEdges, mergeFills } from "@topper/shared";
 import { createEmptyDocument, getSheetSchema } from "@topper/shared";
 import { db } from "./index.ts";
 import {
@@ -162,6 +162,7 @@ function asMap(row: typeof scenes.$inferSelect): MapState {
     imageUrl: row.imageUrl,
     width: row.width,
     height: row.height,
+    gridType: isGridType(row.gridType) ? row.gridType : "square",
     gridSize: row.gridSize,
     snap: row.snap,
     offsetX: row.offsetX,
@@ -262,6 +263,7 @@ export async function createScene(
             imageUrl: current.imageUrl,
             width: current.width,
             height: current.height,
+            gridType: current.gridType,
             gridSize: current.gridSize,
             snap: current.snap,
             offsetX: current.offsetX,
@@ -276,6 +278,7 @@ export async function createScene(
             sortOrder,
             width: current.width,
             height: current.height,
+            gridType: current.gridType,
             gridSize: current.gridSize,
             snap: current.snap,
             offsetX: current.offsetX,
@@ -515,7 +518,13 @@ export async function updateMap(
   patch: Partial<Omit<MapState, "tableId" | "sceneId" | "fills" | "edges">>,
 ): Promise<MapState> {
   const current = await getActiveScene(tableId);
-  const [row] = await db.update(scenes).set(patch).where(eq(scenes.id, current.id)).returning();
+  const next: Partial<typeof scenes.$inferInsert> = { ...patch };
+  const currentType = isGridType(current.gridType) ? current.gridType : "square";
+  if (patch.gridType !== undefined && patch.gridType !== currentType) {
+    next.fills = {};
+    next.edges = {};
+  }
+  const [row] = await db.update(scenes).set(next).where(eq(scenes.id, current.id)).returning();
   if (!row) throw new Error("Map not found");
   return asMap(row);
 }
